@@ -190,7 +190,6 @@ class StockMonitorApp:
             (pos.x(), pos.y()),
         )
         self.window.move(pos)
-        self.qt_app.processEvents()
         logger.info(
             "_apply_window_position POST-move: frame={}",
             self.window.frameGeometry().getRect(),
@@ -211,10 +210,11 @@ class StockMonitorApp:
             return
         if not self.window.isVisible():
             return
+        if self._topmost_burst_timer.isActive():
+            return
         self._topmost_burst_remaining = 6
         reassert_topmost(self._window_hwnd, topmost=True)
-        if not self._topmost_burst_timer.isActive():
-            self._topmost_burst_timer.start()
+        self._topmost_burst_timer.start()
 
     def _run_topmost_burst(self) -> None:
         if self._topmost_burst_remaining <= 0:
