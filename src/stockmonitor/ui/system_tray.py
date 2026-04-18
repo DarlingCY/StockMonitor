@@ -16,22 +16,14 @@ from PySide6.QtWidgets import (
 
 
 class SystemTray:
-    ALIGNMENT_LABELS = {
-        "left": "左",
-        "center": "中",
-        "right": "右",
-        "top": "上",
-        "bottom": "下",
-    }
-
     def __init__(
         self,
         on_add_symbol,
         on_remove_symbol,
         get_symbols,
-        on_set_horizontal_align,
-        on_set_vertical_align,
-        get_alignment,
+        on_set_horizontal_offset,
+        on_set_vertical_offset,
+        get_offsets,
         on_exit,
     ):
         self.tray = QSystemTrayIcon()
@@ -39,9 +31,9 @@ class SystemTray:
         self.tray.setToolTip("StockMonitor")
         self._on_remove_symbol = on_remove_symbol
         self._get_symbols = get_symbols
-        self._get_alignment = get_alignment
-        self._horizontal_actions: dict[str, QAction] = {}
-        self._vertical_actions: dict[str, QAction] = {}
+        self._get_offsets = get_offsets
+        self._on_set_horizontal_offset = on_set_horizontal_offset
+        self._on_set_vertical_offset = on_set_vertical_offset
 
         self.menu = QMenu()
         self.add_symbol_menu = QMenu("增加股票代码")
@@ -49,9 +41,45 @@ class SystemTray:
         self.remove_symbol_menu = QMenu("删除股票代码")
         self.remove_symbol_menu.aboutToShow.connect(self._rebuild_remove_symbol_menu)
         self.position_menu = QMenu("位置配置")
-        self.position_menu.aboutToShow.connect(self._refresh_alignment_actions)
-        self.horizontal_menu = QMenu("水平位置")
-        self.vertical_menu = QMenu("垂直位置")
+        self.position_menu.aboutToShow.connect(self._refresh_position_menu)
+
+        # Horizontal offset input
+        self.horizontal_offset_action = QWidgetAction(self.position_menu)
+        self.horizontal_offset_widget = QWidget(self.position_menu)
+        self.horizontal_offset_layout = QHBoxLayout(self.horizontal_offset_widget)
+        self.horizontal_offset_layout.setContentsMargins(8, 4, 8, 4)
+        self.horizontal_offset_layout.setSpacing(6)
+        self.horizontal_offset_input = QLineEdit(self.horizontal_offset_widget)
+        self.horizontal_offset_input.setPlaceholderText("横向偏移")
+        self.horizontal_offset_input.setFixedWidth(70)
+        self.horizontal_offset_button = QPushButton(
+            "设置", self.horizontal_offset_widget
+        )
+        self.horizontal_offset_button.setFixedWidth(48)
+        self.horizontal_offset_button.clicked.connect(self._submit_horizontal_offset)
+        self.horizontal_offset_input.returnPressed.connect(
+            self._submit_horizontal_offset
+        )
+        self.horizontal_offset_layout.addWidget(self.horizontal_offset_input)
+        self.horizontal_offset_layout.addWidget(self.horizontal_offset_button)
+        self.horizontal_offset_action.setDefaultWidget(self.horizontal_offset_widget)
+
+        # Vertical offset input
+        self.vertical_offset_action = QWidgetAction(self.position_menu)
+        self.vertical_offset_widget = QWidget(self.position_menu)
+        self.vertical_offset_layout = QHBoxLayout(self.vertical_offset_widget)
+        self.vertical_offset_layout.setContentsMargins(8, 4, 8, 4)
+        self.vertical_offset_layout.setSpacing(6)
+        self.vertical_offset_input = QLineEdit(self.vertical_offset_widget)
+        self.vertical_offset_input.setPlaceholderText("纵向偏移")
+        self.vertical_offset_input.setFixedWidth(70)
+        self.vertical_offset_button = QPushButton("设置", self.vertical_offset_widget)
+        self.vertical_offset_button.setFixedWidth(48)
+        self.vertical_offset_button.clicked.connect(self._submit_vertical_offset)
+        self.vertical_offset_input.returnPressed.connect(self._submit_vertical_offset)
+        self.vertical_offset_layout.addWidget(self.vertical_offset_input)
+        self.vertical_offset_layout.addWidget(self.vertical_offset_button)
+        self.vertical_offset_action.setDefaultWidget(self.vertical_offset_widget)
         self.exit_action = QAction("退出")
         self.exit_action.triggered.connect(on_exit)
 
@@ -77,22 +105,8 @@ class SystemTray:
         self.add_symbol_widget_action.setDefaultWidget(self.add_symbol_widget)
         self.add_symbol_menu.addAction(self.add_symbol_widget_action)
 
-        for alignment in ("left", "center", "right"):
-            action = QAction(self.ALIGNMENT_LABELS[alignment], self.horizontal_menu)
-            action.setCheckable(True)
-            action.triggered.connect(partial(on_set_horizontal_align, alignment))
-            self.horizontal_menu.addAction(action)
-            self._horizontal_actions[alignment] = action
-
-        for alignment in ("top", "center", "bottom"):
-            action = QAction(self.ALIGNMENT_LABELS[alignment], self.vertical_menu)
-            action.setCheckable(True)
-            action.triggered.connect(partial(on_set_vertical_align, alignment))
-            self.vertical_menu.addAction(action)
-            self._vertical_actions[alignment] = action
-
-        self.position_menu.addMenu(self.horizontal_menu)
-        self.position_menu.addMenu(self.vertical_menu)
+        self.position_menu.addAction(self.horizontal_offset_action)
+        self.position_menu.addAction(self.vertical_offset_action)
 
         self.menu.addMenu(self.add_symbol_menu)
         self.menu.addMenu(self.remove_symbol_menu)
@@ -155,12 +169,30 @@ class SystemTray:
     def _rebuild_remove_symbol_menu(self) -> None:
         self.update_symbols(self._get_symbols())
 
-    def _refresh_alignment_actions(self) -> None:
-        horizontal_align, vertical_align = self._get_alignment()
-        for alignment, action in self._horizontal_actions.items():
-            action.setChecked(alignment == horizontal_align)
-        for alignment, action in self._vertical_actions.items():
-            action.setChecked(alignment == vertical_align)
+    def _refresh_position_menu(self) -> None:
+        horizontal_offset, vertical_offset = self._get_offsets()
+        self.horizontal_offset_input.setText(str(horizontal_offset))
+        self.vertical_offset_input.setText(str(vertical_offset))
+
+    def _submit_horizontal_offset(self) -> None:
+        text = self.horizontal_offset_input.text().strip()
+        if not text:
+            return
+        try:
+            offset = int(text)
+            self._on_set_horizontal_offset(offset)
+        except ValueError:
+            pass
+
+    def _submit_vertical_offset(self) -> None:
+        text = self.vertical_offset_input.text().strip()
+        if not text:
+            return
+        try:
+            offset = int(text)
+            self._on_set_vertical_offset(offset)
+        except ValueError:
+            pass
 
     def _submit_add_symbol(self, on_add_symbol) -> None:
         symbol = self.symbol_input.text().strip()

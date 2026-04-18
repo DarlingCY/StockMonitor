@@ -55,6 +55,33 @@ class StateStore:
             return None
         return horizontal_align, vertical_align
 
+    def load_offsets(self) -> tuple[int, int] | None:
+        data = self._load_data()
+        horizontal_offset = data.get("horizontal_offset")
+        vertical_offset = data.get("vertical_offset")
+        if horizontal_offset is None or vertical_offset is None:
+            return None
+        try:
+            return int(horizontal_offset), int(vertical_offset)
+        except (ValueError, TypeError):
+            return None
+
+    def save_offsets(self, horizontal_offset: int, vertical_offset: int) -> None:
+        try:
+            data = self._load_data()
+            data.update(
+                {
+                    "horizontal_offset": horizontal_offset,
+                    "vertical_offset": vertical_offset,
+                }
+            )
+            self.path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning("Failed to save offsets state: {}", exc)
+
     def save_position(self, x: int, y: int) -> None:
         try:
             data = self._load_data()

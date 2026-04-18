@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 from loguru import logger
-from PySide6.QtCore import QPoint, Qt, Signal
+from PySide6.QtCore import QEvent, QPoint, Qt, Signal
 from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QWidget
 
@@ -11,10 +11,12 @@ from stockmonitor.services.taskbar_utils import TaskbarUtils
 
 class FloatingBar(QWidget):
     moved = Signal(int, int)
+    keep_visible_requested = Signal()
 
     def __init__(self, topmost: bool = True, background_color: str = "transparent"):
         super().__init__()
         self.setObjectName("FloatingBar")
+        self._keep_visible_enabled = True
         flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Window
@@ -73,12 +75,15 @@ class FloatingBar(QWidget):
             screen = current_screen
 
         area = screen.availableGeometry()
+        screen_geometry = screen.geometry()
 
-        # Calculate bounds
+        # Horizontal still respects available work area so it won't overlap
+        # left/right taskbar. Vertical uses full screen geometry so the window
+        # can move into top/bottom taskbar space when needed.
         min_x = area.left()
-        min_y = area.top()
         max_x = area.left() + max(0, area.width() - win_width)
-        max_y = area.top() + max(0, area.height() - win_height)
+        min_y = screen_geometry.top()
+        max_y = screen_geometry.top() + max(0, screen_geometry.height() - win_height)
 
         x = max(min_x, min(pos.x(), max_x))
         y = max(min_y, min(pos.y(), max_y))
@@ -104,37 +109,54 @@ class FloatingBar(QWidget):
             return offset
 
         area = screen.availableGeometry()
+        screen_geometry = screen.geometry()
         frame_width = self._frame_width()
         frame_height = self._frame_height()
         max_x = max(0, area.width() - frame_width)
-        max_y = max(0, area.height() - frame_height)
+        max_y = max(0, screen_geometry.height() - frame_height)
         x = max(0, min(offset.x(), max_x))
         y = max(0, min(offset.y(), max_y))
         return QPoint(x, y)
 
-    def anchor_to_global(self, horizontal_align: str, vertical_align: str) -> QPoint:
+    def anchor_to_global(
+        self,
+        horizontal_align: str = "",
+        vertical_align: str = "",
+        horizontal_offset: int = 0,
+        vertical_offset: int = 0,
+    ) -> QPoint:
         """Calculate optimal position based on taskbar position and alignment.
 
         Uses Win32 API to detect taskbar position and calculates the optimal
         window position based on the specified horizontal and vertical alignment.
         Uses the pre-set widget dimensions (_logical_width, _logical_height)
         to avoid frameGeometry timing issues.
+
+        Position is calculated as: availableGeometry.top-left + margin + offset
+
+        Args:
+            horizontal_align: Kept for API compatibility, not used for positioning
+            vertical_align: Kept for API compatibility, not used for positioning
+            horizontal_offset: Additional horizontal offset in pixels (positive = right)
+            vertical_offset: Additional vertical offset in pixels (positive = down)
         """
         position_info = TaskbarUtils.calculate_optimal_position(
             window_width=self._logical_width,
             window_height=self._logical_height,
-            margin=5,
+            margin=0,
             horizontal_align=horizontal_align,
             vertical_align=vertical_align,
+            horizontal_offset=horizontal_offset,
+            vertical_offset=vertical_offset,
         )
 
         x = position_info["x"]
         y = position_info["y"]
 
         logger.info(
-            "Anchor position computed: align=({}, {}), logical=({},{}), target=({}, {}), position={}",
-            horizontal_align,
-            vertical_align,
+            "Anchor position computed: offset=({}, {}), logical=({},{}), target=({}, {}), position={}",
+            horizontal_offset,
+            vertical_offset,
             self._logical_width,
             self._logical_height,
             x,
@@ -149,6 +171,9 @@ class FloatingBar(QWidget):
 
     def _frame_height(self) -> int:
         return max(self.frameGeometry().height(), self.height())
+
+    def set_keep_visible_enabled(self, enabled: bool) -> None:
+        self._keep_visible_enabled = enabled
 
     def update_quote(self, quote: StockQuote | None) -> None:
         if quote is None:
@@ -175,6 +200,20 @@ class FloatingBar(QWidget):
 
     def show_error(self, message: str) -> None:
         self.label.setText(f"Error: {message}")
+
+    def hideEvent(self, event) -> None:  # noqa: N802
+        super().hideEvent(event)
+        if self._keep_visible_enabled:
+            self.keep_visible_requested.emit()
+
+    def changeEvent(self, event) -> None:  # noqa: N802
+        super().changeEvent(event)
+        if (
+            self._keep_visible_enabled
+            and event.type() == QEvent.Type.WindowStateChange
+            and self.windowState() & Qt.WindowState.WindowMinimized
+        ):
+            self.keep_visible_requested.emit()
 
     def mousePressEvent(self, event: QMouseEvent) -> None:  # noqa: N802
         if event.button() == Qt.MouseButton.LeftButton:

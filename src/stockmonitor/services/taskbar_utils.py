@@ -153,7 +153,7 @@ class TaskbarUtils:
     def calculate_optimal_position(
         window_width: int,
         window_height: int,
-        margin: int = 5,
+        margin: int = 0,
         horizontal_align: str = "center",
         vertical_align: str = "bottom",
         horizontal_offset: int = 0,
@@ -164,12 +164,14 @@ class TaskbarUtils:
         Uses Qt's screen geometry to ensure consistent coordinate system for
         both calculation and positioning.
 
+        Position is calculated as: availableGeometry.top-left + margin + offset
+
         Args:
-            window_width: Window width in pixels
-            window_height: Window height in pixels
+            window_width: Window width in pixels (kept for API compatibility)
+            window_height: Window height in pixels (kept for API compatibility)
             margin: Margin from screen edges in pixels
-            horizontal_align: Horizontal alignment ("left", "center", "right")
-            vertical_align: Vertical alignment ("top", "center", "bottom")
+            horizontal_align: Kept for API compatibility, not used for positioning
+            vertical_align: Kept for API compatibility, not used for positioning
             horizontal_offset: Additional horizontal offset in pixels
             vertical_offset: Additional vertical offset in pixels
 
@@ -179,7 +181,7 @@ class TaskbarUtils:
         taskbar_info = TaskbarUtils.get_taskbar_info()
         if not taskbar_info:
             logger.warning("No taskbar info, using default position")
-            return {"x": margin, "y": margin, "position": "default"}
+            return {"x": margin + horizontal_offset, "y": margin + vertical_offset, "position": "default"}
 
         # Use Qt to find the screen where taskbar is located
         taskbar_screen = QGuiApplication.screenAt(
@@ -192,7 +194,7 @@ class TaskbarUtils:
             taskbar_screen = QGuiApplication.primaryScreen()
         if taskbar_screen is None:
             logger.warning("No screen found, using default position")
-            return {"x": margin, "y": margin, "position": "default"}
+            return {"x": margin + horizontal_offset, "y": margin + vertical_offset, "position": "default"}
 
         # Use available geometry (excludes taskbar) for positioning
         area = taskbar_screen.availableGeometry()
@@ -210,72 +212,15 @@ class TaskbarUtils:
             area.height(),
         )
 
-        position_str = f"in-taskbar-{vertical_align}-{horizontal_align}"
-
-        # Define area bounds for all cases
-        area_left = area.left()
-        area_top = area.top()
-        area_width = area.width()
-        area_height = area.height()
-
-        if taskbar_info.position in (TaskbarPosition.TOP, TaskbarPosition.BOTTOM):
-            # Horizontal taskbar
-            # Horizontal: align within available area
-            if horizontal_align == "left":
-                x = area_left + margin
-            elif horizontal_align == "right":
-                x = area_left + area_width - window_width - margin
-            else:  # center
-                x = area_left + (area_width - window_width) // 2
-
-            x += horizontal_offset
-
-            # Vertical: position relative to taskbar
-            if taskbar_info.position == TaskbarPosition.BOTTOM:
-                # 底部任务栏: y=0 是屏幕顶部
-                if vertical_align == "top":
-                    # 对齐到任务栏顶部: 窗口顶部贴在任务栏顶部上方
-                    y = area_top + max(0, taskbar_info.top - area_top) - window_height - margin
-                elif vertical_align == "bottom":
-                    # 对齐到任务栏底部: 窗口底部贴在任务栏底部下方
-                    y = taskbar_info.bottom + margin
-                else:  # center
-                    y = taskbar_info.top + (taskbar_info.height - window_height) // 2
-            else:  # TOP
-                # 顶部任务栏: y=0 是屏幕顶部
-                if vertical_align == "top":
-                    # 对齐到任务栏底部: 窗口底部贴在任务栏底部下方
-                    y = taskbar_info.bottom + margin
-                elif vertical_align == "bottom":
-                    # 对齐到任务栏顶部: 窗口顶部贴在任务栏顶部上方
-                    y = area_top + max(0, taskbar_info.top - area_top) - window_height - margin
-                else:  # center
-                    y = taskbar_info.top + (taskbar_info.height - window_height) // 2
-
-            y += vertical_offset
-
-        elif taskbar_info.position == TaskbarPosition.LEFT:
-            x = area_left + margin
-            y = area_top + margin
-            position_str = "left-after-taskbar"
-
-        elif taskbar_info.position == TaskbarPosition.RIGHT:
-            x = area_left + area_width - window_width - margin
-            y = area_top + margin
-            position_str = "right-before-taskbar"
-
-        else:
-            # Unknown position, use default at top-left
-            x = margin
-            y = margin
-            position_str = "default"
+        # Position: availableGeometry.top-left + margin + offset
+        x = area.left() + margin + horizontal_offset
+        y = area.top() + margin + vertical_offset
+        position_str = "top-left-origin"
 
         logger.info(
-            "Calculated position: x={}, y={}, align=({},{}), offset=({},{}), position={}",
+            "Calculated position: x={}, y={}, offset=({},{}), position={}",
             x,
             y,
-            horizontal_align,
-            vertical_align,
             horizontal_offset,
             vertical_offset,
             position_str,

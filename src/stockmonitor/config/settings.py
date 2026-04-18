@@ -8,6 +8,8 @@ class Settings(BaseSettings):
     refresh_interval_seconds: int = 15
     horizontal_align: str = "center"
     vertical_align: str = "bottom"
+    horizontal_offset: int = 0
+    vertical_offset: int = 0
     auto_topmost: bool = True
     background_color: str = "rgba(24, 24, 24, 220)"
 

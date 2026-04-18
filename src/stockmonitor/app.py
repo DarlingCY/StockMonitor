@@ -4,13 +4,16 @@ import sys
 
 import httpx
 from loguru import logger
-from PySide6.QtCore import QPoint, QTimer
+from PySide6.QtCore import QPoint, QTimer, Qt
 from PySide6.QtWidgets import QApplication
 
 from stockmonitor.config.settings import Settings
 from stockmonitor.services.state_store import StateStore
 from stockmonitor.services.stock_api import StockAPI
-from stockmonitor.services.window_behavior import apply_windows_extended_styles
+from stockmonitor.services.window_behavior import (
+    apply_windows_extended_styles,
+    reassert_topmost,
+)
 from stockmonitor.ui.floating_bar import FloatingBar
 from stockmonitor.ui.system_tray import SystemTray
 from stockmonitor.models.quote import StockQuote
@@ -24,12 +27,12 @@ class StockMonitorApp:
         self.state_store = StateStore(settings.state_file)
         self.api = StockAPI()
         self.symbols = self.state_store.load_symbols() or settings.symbols_list
-        saved_alignment = self.state_store.load_alignment()
-        if saved_alignment:
-            self.horizontal_align, self.vertical_align = saved_alignment
+        saved_offsets = self.state_store.load_offsets()
+        if saved_offsets:
+            self.horizontal_offset, self.vertical_offset = saved_offsets
         else:
-            self.horizontal_align = settings.normalized_horizontal_align
-            self.vertical_align = settings.normalized_vertical_align
+            self.horizontal_offset = settings.horizontal_offset
+            self.vertical_offset = settings.vertical_offset
         self._quotes: list[StockQuote] = []
         self._display_index = 0
 
@@ -38,11 +41,14 @@ class StockMonitorApp:
             background_color=settings.background_color,
         )
         self.window.moved.connect(self.state_store.save_position)
+        self.window.keep_visible_requested.connect(self._restore_window_visibility)
         self.window.show()
 
         self.qt_app.processEvents()
         hwnd = int(self.window.winId())
+        self._window_hwnd = hwnd
         apply_windows_extended_styles(hwnd, topmost=settings.auto_topmost)
+        self.qt_app.applicationStateChanged.connect(self._handle_application_state_change)
 
         pos = self.state_store.load_position()
         position_mode = self.state_store.load_position_mode()
@@ -50,16 +56,19 @@ class StockMonitorApp:
             self._apply_window_position(self.window.clamp_to_work_area(QPoint(*pos)))
         else:
             self._apply_window_position(
-                self.window.anchor_to_global(self.horizontal_align, self.vertical_align)
+                self.window.anchor_to_global(
+                    horizontal_offset=self.horizontal_offset,
+                    vertical_offset=self.vertical_offset,
+                )
             )
 
         self.tray = SystemTray(
             on_add_symbol=self.add_symbol,
             on_remove_symbol=self.remove_symbol,
             get_symbols=self.get_symbols,
-            on_set_horizontal_align=self.set_horizontal_align,
-            on_set_vertical_align=self.set_vertical_align,
-            get_alignment=self.get_alignment,
+            on_set_horizontal_offset=self.set_horizontal_offset,
+            on_set_vertical_offset=self.set_vertical_offset,
+            get_offsets=self.get_offsets,
             on_exit=self.exit_app,
         )
         self.tray.update_symbols(self.symbols)
@@ -144,27 +153,24 @@ class StockMonitorApp:
     def get_symbols(self) -> list[str]:
         return list(self.symbols)
 
-    def get_alignment(self) -> tuple[str, str]:
-        return self.horizontal_align, self.vertical_align
+    def get_offsets(self) -> tuple[int, int]:
+        return self.horizontal_offset, self.vertical_offset
 
-    def set_horizontal_align(self, alignment: str) -> None:
-        normalized = alignment.strip().lower()
-        if normalized not in {"left", "center", "right"}:
-            return
-        self.horizontal_align = normalized
+    def set_horizontal_offset(self, offset: int) -> None:
+        self.horizontal_offset = offset
         self._apply_anchor_position()
 
-    def set_vertical_align(self, alignment: str) -> None:
-        normalized = alignment.strip().lower()
-        if normalized not in {"top", "center", "bottom"}:
-            return
-        self.vertical_align = normalized
+    def set_vertical_offset(self, offset: int) -> None:
+        self.vertical_offset = offset
         self._apply_anchor_position()
 
     def _apply_anchor_position(self) -> None:
-        self.state_store.save_alignment(self.horizontal_align, self.vertical_align)
+        self.state_store.save_offsets(self.horizontal_offset, self.vertical_offset)
         self._apply_window_position(
-            self.window.anchor_to_global(self.horizontal_align, self.vertical_align)
+            self.window.anchor_to_global(
+                horizontal_offset=self.horizontal_offset,
+                vertical_offset=self.vertical_offset,
+            )
         )
 
     def _apply_window_position(self, pos: QPoint) -> None:
@@ -179,6 +185,20 @@ class StockMonitorApp:
             "_apply_window_position POST-move: frame={}",
             self.window.frameGeometry().getRect(),
         )
+
+    def _handle_application_state_change(
+        self, state: Qt.ApplicationState
+    ) -> None:
+        if state == Qt.ApplicationState.ApplicationActive:
+            return
+        self._restore_window_visibility()
+
+    def _restore_window_visibility(self) -> None:
+        if self.window.isMinimized():
+            self.window.showNormal()
+        else:
+            self.window.show()
+        reassert_topmost(self._window_hwnd, topmost=self.settings.auto_topmost)
 
     @staticmethod
     def _normalize_symbol(value: str) -> str | None:
@@ -201,6 +221,7 @@ class StockMonitorApp:
         pos = self.window.pos()
         self.state_store.save_position(pos.x(), pos.y())
         self.state_store.save_symbols(self.symbols)
+        self.window.set_keep_visible_enabled(False)
         self.tray.hide()
         self.qt_app.quit()
 
