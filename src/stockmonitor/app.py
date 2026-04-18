@@ -11,6 +11,7 @@ from stockmonitor.config.settings import Settings
 from stockmonitor.services.state_store import StateStore
 from stockmonitor.services.stock_api import StockAPI
 from stockmonitor.services.window_behavior import (
+    ForegroundWatchdog,
     apply_windows_extended_styles,
     reassert_topmost,
 )
@@ -35,6 +36,7 @@ class StockMonitorApp:
             self.vertical_offset = settings.vertical_offset
         self._quotes: list[StockQuote] = []
         self._display_index = 0
+        self._topmost_burst_remaining = 0
 
         self.window = FloatingBar(
             topmost=settings.auto_topmost,
@@ -49,6 +51,14 @@ class StockMonitorApp:
         self._window_hwnd = hwnd
         apply_windows_extended_styles(hwnd, topmost=settings.auto_topmost)
         self.qt_app.applicationStateChanged.connect(self._handle_application_state_change)
+        self._topmost_burst_timer = QTimer()
+        self._topmost_burst_timer.setInterval(250)
+        self._topmost_burst_timer.timeout.connect(self._run_topmost_burst)
+        self._foreground_watchdog = ForegroundWatchdog()
+        self._foreground_watchdog.foreground_changed.connect(
+            self._handle_foreground_changed
+        )
+        self._foreground_watchdog.start()
 
         pos = self.state_store.load_position()
         position_mode = self.state_store.load_position_mode()
@@ -193,12 +203,33 @@ class StockMonitorApp:
             return
         self._restore_window_visibility()
 
+    def _handle_foreground_changed(self) -> None:
+        self._start_topmost_burst()
+
+    def _start_topmost_burst(self) -> None:
+        if not self.settings.auto_topmost:
+            return
+        if not self.window.isVisible():
+            return
+        self._topmost_burst_remaining = 6
+        reassert_topmost(self._window_hwnd, topmost=True)
+        if not self._topmost_burst_timer.isActive():
+            self._topmost_burst_timer.start()
+
+    def _run_topmost_burst(self) -> None:
+        if self._topmost_burst_remaining <= 0:
+            self._topmost_burst_timer.stop()
+            return
+        self._topmost_burst_remaining -= 1
+        reassert_topmost(self._window_hwnd, topmost=self.settings.auto_topmost)
+
     def _restore_window_visibility(self) -> None:
         if self.window.isMinimized():
             self.window.showNormal()
         else:
             self.window.show()
         reassert_topmost(self._window_hwnd, topmost=self.settings.auto_topmost)
+        self._start_topmost_burst()
 
     @staticmethod
     def _normalize_symbol(value: str) -> str | None:
@@ -222,6 +253,8 @@ class StockMonitorApp:
         self.state_store.save_position(pos.x(), pos.y())
         self.state_store.save_symbols(self.symbols)
         self.window.set_keep_visible_enabled(False)
+        self._topmost_burst_timer.stop()
+        self._foreground_watchdog.stop()
         self.tray.hide()
         self.qt_app.quit()
 
