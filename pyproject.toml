@@ -24,5 +24,6 @@ packages = ["src/stockmonitor"]
 
 [dependency-groups]
 dev = [
+    "pyinstaller>=6.0.0",
     "ruff>=0.15.10",
 ]

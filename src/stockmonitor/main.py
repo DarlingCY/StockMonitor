@@ -11,7 +11,8 @@ from stockmonitor.config.settings import Settings
 def main() -> int:
     settings = Settings()
     logger.remove()
-    logger.add(sys.stderr, level="INFO")
+    if sys.stderr is not None:
+        logger.add(sys.stderr, level="INFO")
     logger.add(
         settings.log_file,
         level="INFO",
