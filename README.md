@@ -66,7 +66,7 @@ refresh_interval_seconds=15
 horizontal_align=left
 vertical_align=top
 auto_topmost=true
-background_color=transparent
+background_color=rgba(24, 24, 24, 220)
 ```
 
 说明：
@@ -76,7 +76,7 @@ background_color=transparent
 - `horizontal_align`: 水平位置，支持 `left / center / right`
 - `vertical_align`: 垂直位置，支持 `top / center / bottom`
 - `auto_topmost`: 是否自动置顶
-- `background_color`: 悬浮条背景色，默认 `transparent`（可填 `rgba(...)` 等）
+- `background_color`: 悬浮条背景色，默认 `rgba(24, 24, 24, 220)`（可填 `transparent` 或 `rgba(...)` 等）
 
 ### A 股代码映射规则（腾讯接口）
 

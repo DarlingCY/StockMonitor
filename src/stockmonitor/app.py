@@ -37,24 +37,21 @@ class StockMonitorApp:
             topmost=settings.auto_topmost,
             background_color=settings.background_color,
         )
-        pos = self.state_store.load_position()
-        position_mode = self.state_store.load_position_mode()
-        if pos and position_mode != "anchor":
-            self.window.move(self.window.clamp_to_work_area(QPoint(*pos)))
-        else:
-            self.window.move(
-                self.window.anchor_to_global(
-                    self.horizontal_align,
-                    self.vertical_align,
-                )
-            )
-
         self.window.moved.connect(self.state_store.save_position)
         self.window.show()
 
         self.qt_app.processEvents()
         hwnd = int(self.window.winId())
         apply_windows_extended_styles(hwnd, topmost=settings.auto_topmost)
+
+        pos = self.state_store.load_position()
+        position_mode = self.state_store.load_position_mode()
+        if pos and position_mode != "anchor":
+            self._apply_window_position(self.window.clamp_to_work_area(QPoint(*pos)))
+        else:
+            self._apply_window_position(
+                self.window.anchor_to_global(self.horizontal_align, self.vertical_align)
+            )
 
         self.tray = SystemTray(
             on_add_symbol=self.add_symbol,
@@ -166,8 +163,21 @@ class StockMonitorApp:
 
     def _apply_anchor_position(self) -> None:
         self.state_store.save_alignment(self.horizontal_align, self.vertical_align)
-        self.window.move(
+        self._apply_window_position(
             self.window.anchor_to_global(self.horizontal_align, self.vertical_align)
+        )
+
+    def _apply_window_position(self, pos: QPoint) -> None:
+        logger.info(
+            "_apply_window_position PRE-move: frame={}, move_to={}",
+            self.window.frameGeometry().getRect(),
+            (pos.x(), pos.y()),
+        )
+        self.window.move(pos)
+        self.qt_app.processEvents()
+        logger.info(
+            "_apply_window_position POST-move: frame={}",
+            self.window.frameGeometry().getRect(),
         )
 
     @staticmethod

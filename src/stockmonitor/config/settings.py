@@ -9,7 +9,7 @@ class Settings(BaseSettings):
     horizontal_align: str = "center"
     vertical_align: str = "bottom"
     auto_topmost: bool = True
-    background_color: str = "transparent"
+    background_color: str = "rgba(24, 24, 24, 220)"
 
     model_config = SettingsConfigDict(
         env_file=str(Path.home() / ".StockMonitor" / ".env"),
