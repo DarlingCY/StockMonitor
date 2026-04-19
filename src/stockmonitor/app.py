@@ -11,6 +11,7 @@ from stockmonitor.config.settings import Settings
 from stockmonitor.services import autostart
 from stockmonitor.services.state_store import StateStore
 from stockmonitor.services.stock_api import StockAPI
+from stockmonitor.services.trading_time_gate import is_visible as is_market_visible
 from stockmonitor.services.window_behavior import (
     ForegroundWatchdog,
     apply_windows_extended_styles,
@@ -19,6 +20,7 @@ from stockmonitor.services.window_behavior import (
 from stockmonitor.ui.floating_bar import FloatingBar
 from stockmonitor.ui.system_tray import SystemTray
 from stockmonitor.models.quote import StockQuote
+from datetime import datetime
 
 
 class StockMonitorApp:
@@ -31,6 +33,7 @@ class StockMonitorApp:
         self.symbols = self.state_store.load_symbols() or settings.symbols_list
         self.autostart_enabled = autostart.is_enabled()
         self.state_store.save_autostart(self.autostart_enabled)
+        self.visibility_mode = self.state_store.load_visibility_mode() or "trading_time"
         saved_offsets = self.state_store.load_offsets()
         if saved_offsets:
             self.horizontal_offset, self.vertical_offset = saved_offsets
@@ -47,7 +50,8 @@ class StockMonitorApp:
         )
         self.window.moved.connect(self.state_store.save_position)
         self.window.keep_visible_requested.connect(self._restore_window_visibility)
-        self.window.show()
+        if self._should_show_window():
+            self.window.show()
 
         self.qt_app.processEvents()
         hwnd = int(self.window.winId())
@@ -84,6 +88,8 @@ class StockMonitorApp:
             get_offsets=self.get_offsets,
             on_toggle_autostart=self.toggle_autostart,
             get_autostart=self.get_autostart,
+            on_set_visibility_mode=self.set_visibility_mode,
+            get_visibility_mode=self.get_visibility_mode,
             on_exit=self.exit_app,
         )
         self.tray.update_symbols(self.symbols)
@@ -102,6 +108,15 @@ class StockMonitorApp:
         self.refresh_quotes()
 
     def refresh_quotes(self) -> None:
+        if not self._should_show_window():
+            self._quotes = []
+            self.window.hide()
+            return
+
+        if not self.window.isVisible():
+            self.window.show()
+            reassert_topmost(self._window_hwnd, topmost=self.settings.auto_topmost)
+
         try:
             quotes = self.api.fetch_quotes(self.symbols)
             if quotes:
@@ -174,6 +189,9 @@ class StockMonitorApp:
     def get_autostart(self) -> bool:
         return self.autostart_enabled
 
+    def get_visibility_mode(self) -> str:
+        return self.visibility_mode
+
     def set_horizontal_offset(self, offset: int) -> None:
         self.horizontal_offset = offset
         self._apply_anchor_position()
@@ -188,6 +206,14 @@ class StockMonitorApp:
             self.autostart_enabled = checked
             self.state_store.save_autostart(checked)
         self.tray.set_autostart_checked(self.autostart_enabled)
+
+    def set_visibility_mode(self, mode: str) -> None:
+        if mode not in {"always", "trading_time"}:
+            return
+        self.visibility_mode = mode
+        self.state_store.save_visibility_mode(mode)
+        self.tray.set_visibility_mode(mode)
+        self.refresh_quotes()
 
     def _apply_anchor_position(self) -> None:
         self.state_store.save_offsets(self.horizontal_offset, self.vertical_offset)
@@ -239,12 +265,20 @@ class StockMonitorApp:
         reassert_topmost(self._window_hwnd, topmost=self.settings.auto_topmost)
 
     def _restore_window_visibility(self) -> None:
+        if not self._should_show_window():
+            self.window.hide()
+            return
         if self.window.isMinimized():
             self.window.showNormal()
         else:
             self.window.show()
         reassert_topmost(self._window_hwnd, topmost=self.settings.auto_topmost)
         self._start_topmost_burst()
+
+    def _should_show_window(self) -> bool:
+        if self.visibility_mode == "always":
+            return True
+        return is_market_visible(datetime.now())
 
     @staticmethod
     def _normalize_symbol(value: str) -> str | None:

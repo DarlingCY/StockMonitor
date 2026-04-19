@@ -5,6 +5,7 @@ description = "Windows floating stock bar MVP built with PySide6"
 readme = "README.md"
 requires-python = ">=3.14"
 dependencies = [
+    "cn-stock-holidays>=2.1.6",
     "httpx>=0.28.1",
     "loguru>=0.7.3",
     "pydantic-settings>=2.13.1",

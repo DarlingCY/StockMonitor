@@ -100,6 +100,26 @@ class StateStore:
         except Exception as exc:
             logger.warning("Failed to save autostart state: {}", exc)
 
+    def load_visibility_mode(self) -> str | None:
+        data = self._load_data()
+        mode = data.get("visibility_mode")
+        if mode in {"always", "trading_time"}:
+            return mode
+        return None
+
+    def save_visibility_mode(self, mode: str) -> None:
+        if mode not in {"always", "trading_time"}:
+            return
+        try:
+            data = self._load_data()
+            data.update({"visibility_mode": mode})
+            self.path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning("Failed to save visibility mode state: {}", exc)
+
     def save_position(self, x: int, y: int) -> None:
         try:
             data = self._load_data()

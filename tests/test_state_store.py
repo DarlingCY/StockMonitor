@@ -36,6 +36,28 @@ class StateStoreTests(unittest.TestCase):
 
             self.assertIsNone(store.load_offsets())
 
+    def test_save_and_load_visibility_mode(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "state.json"
+            store = StateStore(path)
+
+            store.save_visibility_mode("always")
+
+            self.assertEqual(store.load_visibility_mode(), "always")
+            data = json.loads(path.read_text(encoding="utf-8"))
+            self.assertEqual(data["visibility_mode"], "always")
+
+    def test_load_visibility_mode_returns_none_for_invalid_value(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            path = Path(temp_dir) / "state.json"
+            path.write_text(
+                json.dumps({"visibility_mode": "invalid"}, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            store = StateStore(path)
+
+            self.assertIsNone(store.load_visibility_mode())
+
 
 if __name__ == "__main__":
     unittest.main()

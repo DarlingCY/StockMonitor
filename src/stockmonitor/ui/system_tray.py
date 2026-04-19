@@ -3,7 +3,7 @@ from __future__ import annotations
 from functools import partial
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLineEdit,
@@ -26,6 +26,8 @@ class SystemTray:
         get_offsets,
         on_toggle_autostart,
         get_autostart,
+        on_set_visibility_mode,
+        get_visibility_mode,
         on_exit,
     ):
         self.tray = QSystemTrayIcon()
@@ -35,6 +37,7 @@ class SystemTray:
         self._get_symbols = get_symbols
         self._get_offsets = get_offsets
         self._get_autostart = get_autostart
+        self._get_visibility_mode = get_visibility_mode
         self._on_set_horizontal_offset = on_set_horizontal_offset
         self._on_set_vertical_offset = on_set_vertical_offset
 
@@ -45,6 +48,7 @@ class SystemTray:
         self.remove_symbol_menu.aboutToShow.connect(self._rebuild_remove_symbol_menu)
         self.position_menu = QMenu("位置配置")
         self.position_menu.aboutToShow.connect(self._refresh_position_menu)
+        self.visibility_menu = QMenu("显示模式")
 
         # Horizontal offset input
         self.horizontal_offset_action = QWidgetAction(self.position_menu)
@@ -87,6 +91,22 @@ class SystemTray:
         self.autostart_action.setCheckable(True)
         self.autostart_action.setChecked(bool(self._get_autostart()))
         self.autostart_action.triggered.connect(on_toggle_autostart)
+        self.visibility_action_group = QActionGroup(self.visibility_menu)
+        self.visibility_action_group.setExclusive(True)
+        self.visibility_always_action = QAction("一直显示")
+        self.visibility_always_action.setCheckable(True)
+        self.visibility_always_action.triggered.connect(
+            lambda checked: checked and on_set_visibility_mode("always")
+        )
+        self.visibility_trading_time_action = QAction("交易时间显示")
+        self.visibility_trading_time_action.setCheckable(True)
+        self.visibility_trading_time_action.triggered.connect(
+            lambda checked: checked and on_set_visibility_mode("trading_time")
+        )
+        self.visibility_action_group.addAction(self.visibility_always_action)
+        self.visibility_action_group.addAction(self.visibility_trading_time_action)
+        self.visibility_menu.addAction(self.visibility_always_action)
+        self.visibility_menu.addAction(self.visibility_trading_time_action)
         self.exit_action = QAction("退出")
         self.exit_action.triggered.connect(on_exit)
 
@@ -118,10 +138,12 @@ class SystemTray:
         self.menu.addMenu(self.add_symbol_menu)
         self.menu.addMenu(self.remove_symbol_menu)
         self.menu.addMenu(self.position_menu)
+        self.menu.addMenu(self.visibility_menu)
         self.menu.addAction(self.autostart_action)
         self.menu.addSeparator()
         self.menu.addAction(self.exit_action)
         self.tray.setContextMenu(self.menu)
+        self.set_visibility_mode(self._get_visibility_mode())
 
     def _create_icon(self) -> QIcon:
         pixmap = QPixmap(16, 16)
@@ -184,6 +206,12 @@ class SystemTray:
 
     def set_autostart_checked(self, checked: bool) -> None:
         self.autostart_action.setChecked(checked)
+
+    def set_visibility_mode(self, mode: str) -> None:
+        if mode == "always":
+            self.visibility_always_action.setChecked(True)
+            return
+        self.visibility_trading_time_action.setChecked(True)
 
     def _submit_horizontal_offset(self) -> None:
         text = self.horizontal_offset_input.text().strip()
