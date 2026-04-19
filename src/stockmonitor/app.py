@@ -8,6 +8,7 @@ from PySide6.QtCore import QPoint, QTimer, Qt
 from PySide6.QtWidgets import QApplication
 
 from stockmonitor.config.settings import Settings
+from stockmonitor.services import autostart
 from stockmonitor.services.state_store import StateStore
 from stockmonitor.services.stock_api import StockAPI
 from stockmonitor.services.window_behavior import (
@@ -28,6 +29,8 @@ class StockMonitorApp:
         self.state_store = StateStore(settings.state_file)
         self.api = StockAPI()
         self.symbols = self.state_store.load_symbols() or settings.symbols_list
+        self.autostart_enabled = autostart.is_enabled()
+        self.state_store.save_autostart(self.autostart_enabled)
         saved_offsets = self.state_store.load_offsets()
         if saved_offsets:
             self.horizontal_offset, self.vertical_offset = saved_offsets
@@ -79,6 +82,8 @@ class StockMonitorApp:
             on_set_horizontal_offset=self.set_horizontal_offset,
             on_set_vertical_offset=self.set_vertical_offset,
             get_offsets=self.get_offsets,
+            on_toggle_autostart=self.toggle_autostart,
+            get_autostart=self.get_autostart,
             on_exit=self.exit_app,
         )
         self.tray.update_symbols(self.symbols)
@@ -166,6 +171,9 @@ class StockMonitorApp:
     def get_offsets(self) -> tuple[int, int]:
         return self.horizontal_offset, self.vertical_offset
 
+    def get_autostart(self) -> bool:
+        return self.autostart_enabled
+
     def set_horizontal_offset(self, offset: int) -> None:
         self.horizontal_offset = offset
         self._apply_anchor_position()
@@ -173,6 +181,13 @@ class StockMonitorApp:
     def set_vertical_offset(self, offset: int) -> None:
         self.vertical_offset = offset
         self._apply_anchor_position()
+
+    def toggle_autostart(self, checked: bool) -> None:
+        success = autostart.set_enabled(checked)
+        if success:
+            self.autostart_enabled = checked
+            self.state_store.save_autostart(checked)
+        self.tray.set_autostart_checked(self.autostart_enabled)
 
     def _apply_anchor_position(self) -> None:
         self.state_store.save_offsets(self.horizontal_offset, self.vertical_offset)

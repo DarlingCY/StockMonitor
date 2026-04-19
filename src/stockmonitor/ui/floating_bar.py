@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from loguru import logger
 from PySide6.QtCore import QEvent, QPoint, Qt, Signal
-from PySide6.QtGui import QGuiApplication, QMouseEvent
+from PySide6.QtGui import QGuiApplication, QMouseEvent, QPaintEvent, QPainter
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QWidget
 
 from stockmonitor.models.quote import StockQuote
@@ -17,6 +17,7 @@ class FloatingBar(QWidget):
         super().__init__()
         self.setObjectName("FloatingBar")
         self._keep_visible_enabled = True
+        self._corner_radius = 8
         flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Window
@@ -26,16 +27,14 @@ class FloatingBar(QWidget):
             flags |= Qt.WindowType.WindowStaysOnTopHint
         self.setWindowFlags(flags)
         self.setAttribute(Qt.WidgetAttribute.WA_TranslucentBackground, True)
+        self.setAttribute(Qt.WidgetAttribute.WA_StyledBackground, True)
         self.setContentsMargins(0, 0, 0, 0)
-        self._logical_width = 520
-        self._logical_height = 44
+        self._logical_width = 0
+        self._logical_height = 0
         self.setStyleSheet(
             f"""
             #FloatingBar {{
-                background-color: {background_color};
                 color: #f5f5f5;
-                border: 1px solid rgba(255, 255, 255, 0.35);
-                border-radius: 8px;
                 font-size: 13px;
             }}
             QLabel {{
@@ -49,17 +48,53 @@ class FloatingBar(QWidget):
 
         self.label = QLabel("Loading...")
         self.label.setTextFormat(Qt.TextFormat.RichText)
-        self.label.setMargin(10)
+        self.label.setMargin(0)
         layout = QHBoxLayout()
-        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setContentsMargins(0, 0, 0, 0)
         layout.addWidget(self.label)
         self.setLayout(layout)
-        self.resize(self._logical_width, self._logical_height)
+        self._sync_size_to_content()
+
+    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
+        painter = QPainter(self)
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        super().paintEvent(event)
+
+    def _sync_size_to_content(self) -> None:
+        previous_pos = self.pos()
+        old_height = self.height() or self._logical_height
+        screen = self.screen() or QGuiApplication.screenAt(previous_pos) or QGuiApplication.primaryScreen()
+        was_bottom_aligned = False
+        if screen is not None:
+            screen_geometry = screen.geometry()
+            old_max_y = screen_geometry.top() + max(0, screen_geometry.height() - old_height)
+            was_bottom_aligned = previous_pos.y() >= old_max_y - 1
+
+        content_size = self.sizeHint()
+        content_width = content_size.width()
+        content_height = content_size.height()
+        self._logical_width = content_width
+        self._logical_height = content_height
+        self.setFixedWidth(content_width)
+        self.setFixedHeight(content_height)
+
+        if self.isVisible():
+            if screen is not None and was_bottom_aligned:
+                screen_geometry = screen.geometry()
+                new_y = screen_geometry.bottom() + 1 - self.height()
+                clamped_pos = self.clamp_to_work_area(QPoint(previous_pos.x(), new_y))
+            else:
+                clamped_pos = self.clamp_to_work_area(previous_pos)
+            if clamped_pos != previous_pos:
+                self.move(clamped_pos)
 
     def clamp_to_work_area(self, pos: QPoint) -> QPoint:
-        # Use the logical dimensions to avoid frameGeometry timing issues
-        win_width = self._logical_width
-        win_height = self._logical_height
+        # Prefer the live widget size. Using frameGeometry here can keep a stale,
+        # larger top-level height and leave a visible gap from the bottom edge.
+        win_width = self.width() or self._logical_width
+        win_height = self.height() or self._logical_height
 
         # Get the screen where the window is currently located
         current_screen = self.screen()
@@ -110,10 +145,10 @@ class FloatingBar(QWidget):
 
         area = screen.availableGeometry()
         screen_geometry = screen.geometry()
-        frame_width = self._frame_width()
-        frame_height = self._frame_height()
-        max_x = max(0, area.width() - frame_width)
-        max_y = max(0, screen_geometry.height() - frame_height)
+        width = self.width() or self._logical_width
+        height = self.height() or self._logical_height
+        max_x = max(0, area.width() - width)
+        max_y = max(0, screen_geometry.height() - height)
         x = max(0, min(offset.x(), max_x))
         y = max(0, min(offset.y(), max_y))
         return QPoint(x, y)
@@ -178,6 +213,7 @@ class FloatingBar(QWidget):
     def update_quote(self, quote: StockQuote | None) -> None:
         if quote is None:
             self.label.setText("No data")
+            self._sync_size_to_content()
             return
 
         price_text = f"{quote.price:.2f}"
@@ -197,9 +233,11 @@ class FloatingBar(QWidget):
                 f"<span style='color:{change_color};'>({change_text})</span>"
             )
         )
+        self._sync_size_to_content()
 
     def show_error(self, message: str) -> None:
         self.label.setText(f"Error: {message}")
+        self._sync_size_to_content()
 
     def hideEvent(self, event) -> None:  # noqa: N802
         super().hideEvent(event)

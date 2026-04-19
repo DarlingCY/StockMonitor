@@ -196,8 +196,11 @@ class TaskbarUtils:
             logger.warning("No screen found, using default position")
             return {"x": margin + horizontal_offset, "y": margin + vertical_offset, "position": "default"}
 
-        # Use available geometry (excludes taskbar) for positioning
+        # Use available geometry (excludes taskbar) for top-left-origin
+        # positioning, but switch to an explicit bottom-sticky rule once the
+        # requested offset would push the window past the screen bottom.
         area = taskbar_screen.availableGeometry()
+        screen_geometry = taskbar_screen.geometry()
 
         logger.info(
             "Taskbar info: pos={}, rect=({},{},{},{}), area=({},{},{},{})",
@@ -212,17 +215,26 @@ class TaskbarUtils:
             area.height(),
         )
 
-        # Position: availableGeometry.top-left + margin + offset
+        # Horizontal always uses the available area's left edge as origin.
         x = area.left() + margin + horizontal_offset
-        y = area.top() + margin + vertical_offset
-        position_str = "top-left-origin"
+
+        top_origin_y = area.top() + margin + vertical_offset
+        bottom_y = screen_geometry.bottom() + 1 - window_height - margin
+        if top_origin_y >= bottom_y:
+            y = bottom_y
+            position_str = "bottom-sticky"
+        else:
+            y = top_origin_y
+            position_str = "top-left-origin"
 
         logger.info(
-            "Calculated position: x={}, y={}, offset=({},{}), position={}",
+            "Calculated position: x={}, y={}, offset=({},{}), top_origin_y={}, bottom_y={}, position={}",
             x,
             y,
             horizontal_offset,
             vertical_offset,
+            top_origin_y,
+            bottom_y,
             position_str,
         )
 

@@ -24,6 +24,8 @@ class SystemTray:
         on_set_horizontal_offset,
         on_set_vertical_offset,
         get_offsets,
+        on_toggle_autostart,
+        get_autostart,
         on_exit,
     ):
         self.tray = QSystemTrayIcon()
@@ -32,6 +34,7 @@ class SystemTray:
         self._on_remove_symbol = on_remove_symbol
         self._get_symbols = get_symbols
         self._get_offsets = get_offsets
+        self._get_autostart = get_autostart
         self._on_set_horizontal_offset = on_set_horizontal_offset
         self._on_set_vertical_offset = on_set_vertical_offset
 
@@ -80,6 +83,10 @@ class SystemTray:
         self.vertical_offset_layout.addWidget(self.vertical_offset_input)
         self.vertical_offset_layout.addWidget(self.vertical_offset_button)
         self.vertical_offset_action.setDefaultWidget(self.vertical_offset_widget)
+        self.autostart_action = QAction("开机自启")
+        self.autostart_action.setCheckable(True)
+        self.autostart_action.setChecked(bool(self._get_autostart()))
+        self.autostart_action.triggered.connect(on_toggle_autostart)
         self.exit_action = QAction("退出")
         self.exit_action.triggered.connect(on_exit)
 
@@ -111,6 +118,7 @@ class SystemTray:
         self.menu.addMenu(self.add_symbol_menu)
         self.menu.addMenu(self.remove_symbol_menu)
         self.menu.addMenu(self.position_menu)
+        self.menu.addAction(self.autostart_action)
         self.menu.addSeparator()
         self.menu.addAction(self.exit_action)
         self.tray.setContextMenu(self.menu)
@@ -173,6 +181,9 @@ class SystemTray:
         horizontal_offset, vertical_offset = self._get_offsets()
         self.horizontal_offset_input.setText(str(horizontal_offset))
         self.vertical_offset_input.setText(str(vertical_offset))
+
+    def set_autostart_checked(self, checked: bool) -> None:
+        self.autostart_action.setChecked(checked)
 
     def _submit_horizontal_offset(self) -> None:
         text = self.horizontal_offset_input.text().strip()
