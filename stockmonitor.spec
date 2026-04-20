@@ -3,11 +3,13 @@
 from pathlib import Path
 
 import PySide6
+import cn_stock_holidays
 
 
 project_root = Path(SPECPATH)
 src_root = project_root / "src"
 pyside_dir = Path(PySide6.__file__).resolve().parent
+cn_stock_holidays_dir = Path(cn_stock_holidays.__file__).resolve().parent
 
 hiddenimports = [
     "pywintypes",
@@ -23,6 +25,7 @@ hiddenimports = [
 
 datas = [
     (str(pyside_dir / "plugins" / "platforms"), "PySide6/plugins/platforms"),
+    (str(cn_stock_holidays_dir / "data.txt"), "cn_stock_holidays"),
 ]
 
 a = Analysis(
