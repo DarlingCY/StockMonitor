@@ -6,7 +6,7 @@ from dataclasses import dataclass
 from enum import Enum
 
 from loguru import logger
-from PySide6.QtCore import QPoint, QRect
+from PySide6.QtCore import QPoint
 from PySide6.QtGui import QGuiApplication
 
 
@@ -202,7 +202,7 @@ class TaskbarUtils:
         area = taskbar_screen.availableGeometry()
         screen_geometry = taskbar_screen.geometry()
 
-        logger.info(
+        logger.debug(
             "Taskbar info: pos={}, rect=({},{},{},{}), area=({},{},{},{})",
             taskbar_info.position.value,
             taskbar_info.left,
@@ -227,7 +227,7 @@ class TaskbarUtils:
             y = top_origin_y
             position_str = "top-left-origin"
 
-        logger.info(
+        logger.debug(
             "Calculated position: x={}, y={}, offset=({},{}), top_origin_y={}, bottom_y={}, position={}",
             x,
             y,

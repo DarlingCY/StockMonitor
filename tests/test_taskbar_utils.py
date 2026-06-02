@@ -17,6 +17,9 @@ class _FakeScreen:
     def availableGeometry(self) -> QRect:
         return self._area
 
+    def geometry(self) -> QRect:
+        return self._area
+
 
 class TaskbarUtilsTests(unittest.TestCase):
     def _patch_screen(

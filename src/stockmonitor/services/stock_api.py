@@ -18,6 +18,26 @@ class StockAPI:
 
     def __init__(self, timeout: float = 8.0):
         self.timeout = timeout
+        self._client: httpx.Client | None = None
+
+    def _get_client(self) -> httpx.Client:
+        """Return a lazily-created, reused client to keep connections alive.
+
+        Not thread-safe: a StockAPI instance is intended to be used from a
+        single thread (e.g. owned by one worker thread).
+        """
+        if self._client is None:
+            self._client = httpx.Client(
+                timeout=self.timeout, headers=self.DEFAULT_HEADERS
+            )
+        return self._client
+
+    def close(self) -> None:
+        if self._client is not None:
+            try:
+                self._client.close()
+            finally:
+                self._client = None
 
     def fetch_quotes(self, symbols: list[str]) -> list[StockQuote]:
         if not symbols:
@@ -33,10 +53,9 @@ class StockAPI:
         url = f"{self.TENCENT_URL}{','.join(market_symbols)}"
         logger.debug("Fetching quotes from Tencent: {}", url)
 
-        with httpx.Client(timeout=self.timeout, headers=self.DEFAULT_HEADERS) as client:
-            response = client.get(url)
-            response.raise_for_status()
-            text = response.text
+        response = self._get_client().get(url)
+        response.raise_for_status()
+        text = response.text
 
         quotes: list[StockQuote] = []
         lines = [line.strip() for line in text.split(";") if line.strip()]

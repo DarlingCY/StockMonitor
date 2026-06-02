@@ -4,7 +4,7 @@ import sys
 
 import httpx
 from loguru import logger
-from PySide6.QtCore import QPoint, QTimer, Qt
+from PySide6.QtCore import QPoint, QThread, QTimer, Qt, Signal
 from PySide6.QtWidgets import QApplication
 
 from stockmonitor.config.settings import Settings
@@ -19,8 +19,42 @@ from stockmonitor.services.window_behavior import (
 )
 from stockmonitor.ui.floating_bar import FloatingBar
 from stockmonitor.ui.system_tray import SystemTray
+from stockmonitor.ui.update_controller import UpdateController
 from stockmonitor.models.quote import StockQuote
 from datetime import datetime
+
+
+class _QuoteFetchWorker(QThread):
+    """Fetches quotes off the GUI thread to avoid blocking the UI on network I/O.
+
+    Owns its own StockAPI (and thus its own httpx.Client) so the connection is
+    reused across fetches without sharing a client across threads.
+    """
+
+    # (quotes | None, status) where status in {"ok", "empty", "http_error", "error"}
+    result = Signal(object, str)
+
+    def __init__(self, symbols: list[str], parent=None) -> None:
+        super().__init__(parent)
+        self._symbols = symbols
+        self._api = StockAPI()
+
+    def run(self) -> None:
+        try:
+            quotes = self._api.fetch_quotes(self._symbols)
+            if quotes:
+                self.result.emit(quotes, "ok")
+            else:
+                self.result.emit(None, "empty")
+        except httpx.HTTPError as exc:
+            logger.error("Quote request failed: {}", exc)
+            self.result.emit(None, "http_error")
+        except Exception as exc:  # noqa: BLE001
+            logger.exception("Unexpected refresh error: {}", exc)
+            self.result.emit(None, "error")
+        finally:
+            self._api.close()
+
 
 
 class StockMonitorApp:
@@ -43,12 +77,21 @@ class StockMonitorApp:
         self._quotes: list[StockQuote] = []
         self._display_index = 0
         self._topmost_burst_remaining = 0
+        self._quote_worker: _QuoteFetchWorker | None = None
+
+        # Debounce position persistence so dragging doesn't write JSON on every
+        # mouse-move event. We store the latest position and flush after idle.
+        self._pending_position: tuple[int, int] | None = None
+        self._save_position_timer = QTimer()
+        self._save_position_timer.setSingleShot(True)
+        self._save_position_timer.setInterval(400)
+        self._save_position_timer.timeout.connect(self._flush_pending_position)
 
         self.window = FloatingBar(
             topmost=settings.auto_topmost,
             background_color=settings.background_color,
         )
-        self.window.moved.connect(self.state_store.save_position)
+        self.window.moved.connect(self._on_window_moved)
         self.window.keep_visible_requested.connect(self._restore_window_visibility)
         if self._should_show_window():
             self.window.show()
@@ -90,10 +133,13 @@ class StockMonitorApp:
             get_autostart=self.get_autostart,
             on_set_visibility_mode=self.set_visibility_mode,
             get_visibility_mode=self.get_visibility_mode,
+            on_check_update=self.check_for_update,
             on_exit=self.exit_app,
         )
         self.tray.update_symbols(self.symbols)
         self.tray.show()
+
+        self.update_controller = UpdateController(notify=self.tray.show_message)
 
         self.refresh_timer = QTimer()
         self.refresh_timer.setInterval(max(1, settings.refresh_interval_seconds) * 1000)
@@ -104,6 +150,14 @@ class StockMonitorApp:
         self.rotate_timer.setInterval(3000)
         self.rotate_timer.timeout.connect(self.rotate_quote)
         self.rotate_timer.start()
+
+        # Periodic (daily) update check.
+        self.update_check_timer = QTimer()
+        self.update_check_timer.setInterval(24 * 60 * 60 * 1000)
+        self.update_check_timer.timeout.connect(self._auto_check_update)
+        self.update_check_timer.start()
+        # Initial check shortly after startup so the UI is up first.
+        QTimer.singleShot(8000, self._auto_check_update)
 
         self.refresh_quotes()
 
@@ -117,23 +171,74 @@ class StockMonitorApp:
             self.window.show()
             reassert_topmost(self._window_hwnd, topmost=self.settings.auto_topmost)
 
-        try:
-            quotes = self.api.fetch_quotes(self.symbols)
-            if quotes:
-                self._quotes = quotes
-                self._display_index = 0
-                self.window.update_quote(self._quotes[0])
-            else:
-                self._quotes = []
+        if not self.symbols:
+            self._quotes = []
+            self.window.show_error("No symbols configured")
+            return
+
+        # Skip if a fetch is already in flight to avoid piling up threads.
+        if self._quote_worker is not None and self._quote_worker.isRunning():
+            return
+
+        worker = _QuoteFetchWorker(list(self.symbols))
+        worker.result.connect(
+            self._on_quotes_fetched, Qt.ConnectionType.QueuedConnection
+        )
+        worker.finished.connect(lambda w=worker: self._clear_quote_worker(w))
+        worker.finished.connect(worker.deleteLater)
+        self._quote_worker = worker
+        worker.start()
+
+    def _clear_quote_worker(self, worker) -> None:
+        # Only clear if the finishing worker is still the current one, so a
+        # newer worker started in the meantime is not accidentally dropped.
+        if self._quote_worker is worker:
+            self._quote_worker = None
+
+    def _on_window_moved(self, x: int, y: int) -> None:
+        # Keep only the latest position; persist once movement settles.
+        self._pending_position = (x, y)
+        self._save_position_timer.start()
+
+    def _flush_pending_position(self) -> None:
+        if self._pending_position is None:
+            return
+        x, y = self._pending_position
+        self._pending_position = None
+        self.state_store.save_position(x, y)
+
+    def _on_quotes_fetched(self, quotes, status: str) -> None:
+        if status != "ok" or not quotes:
+            self._quotes = []
+            if status == "empty":
                 self.window.show_error("No quote data")
-        except httpx.HTTPError as exc:
-            logger.error("Quote request failed: {}", exc)
-            self._quotes = []
-            self.window.show_error("Request failed")
-        except Exception as exc:
-            logger.exception("Unexpected refresh error: {}", exc)
-            self._quotes = []
-            self.window.show_error("Unexpected error")
+            elif status == "http_error":
+                self.window.show_error("Request failed")
+            elif status == "error":
+                self.window.show_error("Unexpected error")
+            return
+
+        # Preserve the rotation position across refreshes so the periodic data
+        # refresh does not reset/skip the carousel.
+        current_symbol = None
+        if self._quotes and 0 <= self._display_index < len(self._quotes):
+            current_symbol = self._quotes[self._display_index].symbol
+
+        had_quotes = bool(self._quotes)
+        self._quotes = quotes
+
+        new_index = 0
+        if current_symbol is not None:
+            for i, quote in enumerate(quotes):
+                if quote.symbol == current_symbol:
+                    new_index = i
+                    break
+        self._display_index = new_index
+
+        # Only repaint immediately on the first successful load; otherwise let
+        # the rotate timer keep its rhythm.
+        if not had_quotes:
+            self.window.update_quote(self._quotes[self._display_index])
 
     def add_symbol(self, symbol: str) -> bool:
         normalized = self._normalize_symbol(symbol)
@@ -297,12 +402,31 @@ class StockMonitorApp:
         self._display_index = (self._display_index + 1) % len(self._quotes)
         self.window.update_quote(self._quotes[self._display_index])
 
+    def check_for_update(self) -> None:
+        """Manual update check triggered from the tray menu."""
+        self.update_controller.check(silent=False)
+
+    def _auto_check_update(self) -> None:
+        """Automatic (startup/daily) check; stays silent unless an update exists."""
+        self.update_controller.check(silent=True)
+
     def exit_app(self) -> None:
         pos = self.window.pos()
+        self._save_position_timer.stop()
         self.state_store.save_position(pos.x(), pos.y())
         self.state_store.save_symbols(self.symbols)
         self.window.set_keep_visible_enabled(False)
         self._topmost_burst_timer.stop()
+        self.refresh_timer.stop()
+        self.rotate_timer.stop()
+        self.update_check_timer.stop()
+        if self._quote_worker is not None and self._quote_worker.isRunning():
+            # Wait long enough to cover the network timeout so we never destroy
+            # a still-running QThread during interpreter teardown.
+            if not self._quote_worker.wait(9000):
+                logger.warning("Quote worker did not finish before exit")
+        self.api.close()
+        self.update_controller.shutdown()
         self._foreground_watchdog.stop()
         self.tray.hide()
         self.qt_app.quit()

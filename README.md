@@ -13,6 +13,7 @@
 - 请求失败时 UI 显示错误状态，不崩溃
 - pywin32 扩展样式：`WS_EX_TOOLWINDOW`
 - 系统托盘：二级菜单内输入增加股票代码、删除股票代码、退出
+- 自动更新：启动后及每天定时检查 GitHub Release 最新版本，发现新版本时托盘通知并支持一键下载安装（托盘菜单亦有“检查更新”手动项）
 - 增加股票代码时会先校验代码是否真实存在，再加入监控列表
 - 右键菜单支持直接配置位置偏移：横向偏移 / 纵向偏移
 - 使用 `pydantic-settings` 读取配置（支持 `.env` 覆盖）
@@ -145,6 +146,15 @@ git push origin v0.1.0
 ```
 
 GitHub Actions 将自动构建并创建 Release。
+
+> 发布流程会根据 tag 自动同步版本号到 `src/stockmonitor/__init__.py`、`pyproject.toml` 与安装包，确保应用内“检查更新”能正确比较版本。
+
+### 自动更新
+
+- 程序启动约 8 秒后自动检查一次，之后每 24 小时检查一次，亦可通过托盘菜单的“检查更新”手动触发。
+- 检查来源：GitHub 仓库的 latest release（`https://api.github.com/repos/DarlingCY/StockMonitor/releases/latest`）。
+- 发现新版本时：自动检查会先弹出托盘通知，并打开确认对话框；可选择“下载并安装”（下载 `StockMonitor-Setup.exe` 后退出程序并启动安装程序）、“前往发布页”或“稍后”。
+- 版本比较基于 `__version__`，发布时由 CI 从 tag 写入；本地源码运行时版本固定为源码中的 `__version__`。
 
 ### 打包配置说明
 

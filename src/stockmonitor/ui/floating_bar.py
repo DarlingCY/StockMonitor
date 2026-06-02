@@ -32,19 +32,20 @@ class FloatingBar(QWidget):
         self._logical_width = 0
         self._logical_height = 0
         self.setStyleSheet(
-            f"""
-            #FloatingBar {{
+            """
+            #FloatingBar {
                 color: #f5f5f5;
                 font-size: 13px;
-            }}
-            QLabel {{
+            }
+            QLabel {
                 color: #f5f5f5;
                 background: transparent;
                 border: none;
-            }}
+            }
             """
         )
         self._drag_offset: QPoint | None = None
+        self._last_label_text: str | None = None
 
         self.label = QLabel("Loading...")
         self.label.setTextFormat(Qt.TextFormat.RichText)
@@ -123,7 +124,7 @@ class FloatingBar(QWidget):
         x = max(min_x, min(pos.x(), max_x))
         y = max(min_y, min(pos.y(), max_y))
 
-        logger.info(
+        logger.debug(
             "clamp_to_work_area: input={}, screen={}, area={}, logical=({},{}), min=({},{}), max=({},{}), output={}",
             (pos.x(), pos.y()),
             screen.geometry().getRect(),
@@ -210,10 +211,16 @@ class FloatingBar(QWidget):
     def set_keep_visible_enabled(self, enabled: bool) -> None:
         self._keep_visible_enabled = enabled
 
+    def _set_label_text(self, text: str) -> None:
+        if text == self._last_label_text:
+            return
+        self._last_label_text = text
+        self.label.setText(text)
+        self._sync_size_to_content()
+
     def update_quote(self, quote: StockQuote | None) -> None:
         if quote is None:
-            self.label.setText("No data")
-            self._sync_size_to_content()
+            self._set_label_text("No data")
             return
 
         price_text = f"{quote.price:.2f}"
@@ -227,17 +234,14 @@ class FloatingBar(QWidget):
             change_color = "#f5f5f5"
             change_text = "0.00%"
 
-        self.label.setText(
-            (
-                f"<span style='color:#f5f5f5;'>{quote.name} {price_text} </span>"
-                f"<span style='color:{change_color};'>({change_text})</span>"
-            )
+        html = (
+            f"<span style='color:#f5f5f5;'>{quote.name} {price_text} </span>"
+            f"<span style='color:{change_color};'>({change_text})</span>"
         )
-        self._sync_size_to_content()
+        self._set_label_text(html)
 
     def show_error(self, message: str) -> None:
-        self.label.setText(f"Error: {message}")
-        self._sync_size_to_content()
+        self._set_label_text(f"Error: {message}")
 
     def hideEvent(self, event) -> None:  # noqa: N802
         super().hideEvent(event)

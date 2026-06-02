@@ -30,13 +30,6 @@ jobs:
       - name: Install dependencies
         run: uv sync --group dev
 
-      - name: Build with PyInstaller
-        run: uv run pyinstaller stockmonitor.spec --noconfirm
-
-      - name: Install Inno Setup
-        run: |
-          choco install innosetup -y
-
       - name: Get version from tag
         id: get_version
         run: |
@@ -47,6 +40,25 @@ jobs:
           $version = $refName -replace '^v', ''
           echo "VERSION=$version" >> $env:GITHUB_OUTPUT
           echo "VERSION=$version" >> $env:GITHUB_ENV
+
+      - name: Sync package version
+        run: |
+          $version = "${{ steps.get_version.outputs.VERSION }}"
+          $init = "src/stockmonitor/__init__.py"
+          (Get-Content $init) `
+            -replace '__version__ = ".*"', "__version__ = `"$version`"" `
+            | Set-Content $init
+          $pyproject = "pyproject.toml"
+          (Get-Content $pyproject) `
+            -replace '^version = ".*"', "version = `"$version`"" `
+            | Set-Content $pyproject
+
+      - name: Build with PyInstaller
+        run: uv run pyinstaller stockmonitor.spec --noconfirm
+
+      - name: Install Inno Setup
+        run: |
+          choco install innosetup -y
 
       - name: Build installer with Inno Setup
         run: |

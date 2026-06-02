@@ -19,6 +19,7 @@ def main() -> int:
         rotation="1 MB",
         retention=5,
         encoding="utf-8",
+        enqueue=True,
     )
     app = StockMonitorApp(settings)
     return app.run()

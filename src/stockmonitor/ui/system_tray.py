@@ -28,6 +28,7 @@ class SystemTray:
         get_autostart,
         on_set_visibility_mode,
         get_visibility_mode,
+        on_check_update,
         on_exit,
     ):
         self.tray = QSystemTrayIcon()
@@ -107,6 +108,8 @@ class SystemTray:
         self.visibility_action_group.addAction(self.visibility_trading_time_action)
         self.visibility_menu.addAction(self.visibility_always_action)
         self.visibility_menu.addAction(self.visibility_trading_time_action)
+        self.check_update_action = QAction("检查更新")
+        self.check_update_action.triggered.connect(lambda: on_check_update())
         self.exit_action = QAction("退出")
         self.exit_action.triggered.connect(on_exit)
 
@@ -141,6 +144,7 @@ class SystemTray:
         self.menu.addMenu(self.visibility_menu)
         self.menu.addAction(self.autostart_action)
         self.menu.addSeparator()
+        self.menu.addAction(self.check_update_action)
         self.menu.addAction(self.exit_action)
         self.tray.setContextMenu(self.menu)
         self.set_visibility_mode(self._get_visibility_mode())
