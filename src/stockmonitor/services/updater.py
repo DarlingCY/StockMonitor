@@ -173,8 +173,8 @@ def download_installer(
 def launch_installer(installer_path: Path) -> bool:
     """Launch the installer after this process has fully exited.
 
-    Starts a detached waiter that polls until the current PID disappears,
-    then runs the installer. That way Inno Setup can replace locked files.
+    Uses a hidden WScript waiter (no console window) that polls until the
+    current PID disappears, then starts the installer.
     """
     if not installer_path.exists():
         logger.error("Installer not found: {}", installer_path)
@@ -187,37 +187,34 @@ def launch_installer(installer_path: Path) -> bool:
             return True
 
         pid = os.getpid()
-        bat_path = Path(tempfile.gettempdir()) / f"stockmonitor-update-{pid}.bat"
-        bat_path.write_text(
+        vbs_path = Path(tempfile.gettempdir()) / f"stockmonitor-update-{pid}.vbs"
+        # Double any quotes in the installer path for VB string literals.
+        installer_vbs = installer.replace('"', '""')
+        vbs_path.write_text(
             "\r\n".join(
                 [
-                    "@echo off",
-                    "setlocal",
-                    f":wait",
-                    f'tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul',
-                    "if not errorlevel 1 (",
-                    "  timeout /t 1 /nobreak >nul",
-                    "  goto wait",
-                    ")",
-                    # Brief settle so file locks are released.
-                    "timeout /t 1 /nobreak >nul",
-                    f'start "" "{installer}"',
-                    'del "%~f0" >nul 2>&1',
+                    f'Dim pid, installer, wmi, procs',
+                    f'pid = {pid}',
+                    f'installer = "{installer_vbs}"',
+                    'Set wmi = GetObject("winmgmts:\\\\.\\root\\cimv2")',
+                    "Do",
+                    '  Set procs = wmi.ExecQuery("Select ProcessId from Win32_Process Where ProcessId=" & pid)',
+                    "  If procs.Count = 0 Then Exit Do",
+                    "  WScript.Sleep 1000",
+                    "Loop",
+                    "WScript.Sleep 1000",
+                    'CreateObject("WScript.Shell").Run """" & installer & """", 1, False',
                     "",
                 ]
             ),
             encoding="utf-8",
         )
-        # Detach the waiter so it outlives this process; CREATE_NO_WINDOW
-        # keeps the polling console invisible.
-        creationflags = (
-            getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
-            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
-            | 0x08000000  # CREATE_NO_WINDOW
-        )
+        # //B = batch mode (no UI). wscript itself has no console.
         subprocess.Popen(  # noqa: S603
-            ["cmd.exe", "/c", str(bat_path)],
-            creationflags=creationflags,
+            ["wscript.exe", "//B", "//Nologo", str(vbs_path)],
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0x08000000)
+            | getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200),
             close_fds=True,
             stdin=subprocess.DEVNULL,
             stdout=subprocess.DEVNULL,
