@@ -5,12 +5,10 @@ import sys
 import httpx
 from loguru import logger
 from PySide6.QtCore import QPoint, QThread, QTimer, Qt, Signal
-from PySide6.QtGui import QIcon
 from PySide6.QtWidgets import QApplication
 
 from stockmonitor.config.settings import Settings
 from stockmonitor.models.quote import StockQuote
-from stockmonitor.resources import icon_path
 from stockmonitor.services import autostart
 from stockmonitor.services.state_store import StateStore
 from stockmonitor.services.stock_api import StockAPI
@@ -20,6 +18,7 @@ from stockmonitor.services.window_behavior import (
     apply_windows_extended_styles,
     reassert_topmost,
 )
+from stockmonitor.ui.app_icon import make_app_icon
 from stockmonitor.ui.floating_bar import FloatingBar
 from stockmonitor.ui.system_tray import SystemTray
 from stockmonitor.ui.update_controller import UpdateController
@@ -64,9 +63,7 @@ class StockMonitorApp:
         self.settings = settings
         self.qt_app = QApplication(sys.argv)
         self.qt_app.setQuitOnLastWindowClosed(False)
-        app_icon = icon_path()
-        if app_icon is not None:
-            self.qt_app.setWindowIcon(QIcon(str(app_icon)))
+        self.qt_app.setWindowIcon(make_app_icon())
         self.state_store = StateStore(settings.state_file)
         self.api = StockAPI()
         self.symbols = self.state_store.load_symbols() or settings.symbols_list

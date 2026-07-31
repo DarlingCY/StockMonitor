@@ -23,7 +23,7 @@
 
 ```text
 assets/
-  icon.ico          # 应用/安装包/托盘图标
+  icon.ico          # 应用/安装包图标（与托盘同款柱状图）
   icon.png          # 图标源图
 src/stockmonitor/
   main.py

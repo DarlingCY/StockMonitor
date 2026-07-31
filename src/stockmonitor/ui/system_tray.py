@@ -2,8 +2,7 @@ from __future__ import annotations
 
 from functools import partial
 
-from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QActionGroup, QColor, QGuiApplication, QIcon, QPainter, QPixmap
+from PySide6.QtGui import QAction, QActionGroup
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -14,6 +13,8 @@ from PySide6.QtWidgets import (
     QWidget,
     QWidgetAction,
 )
+
+from stockmonitor.ui.app_icon import make_app_icon
 
 
 class SystemTray:
@@ -33,7 +34,7 @@ class SystemTray:
         on_exit,
     ):
         self.tray = QSystemTrayIcon()
-        self.tray.setIcon(self._create_icon())
+        self.tray.setIcon(make_app_icon())
         self.tray.setToolTip("StockMonitor")
         self._on_remove_symbol = on_remove_symbol
         self._get_symbol_entries = get_symbol_entries
@@ -138,44 +139,6 @@ class SystemTray:
         layout.addWidget(button)
         action.setDefaultWidget(widget)
         return action, edit
-
-    def _create_icon(self) -> QIcon:
-        """Crisp tray icon: opaque integer fills at device-pixel sizes."""
-        icon = QIcon()
-        screen = QGuiApplication.primaryScreen()
-        dpr = float(screen.devicePixelRatio()) if screen is not None else 1.0
-        for logical in (16, 20, 24, 32):
-            physical = max(logical, int(round(logical * dpr)))
-            pixmap = self._paint_tray_pixmap(physical)
-            pixmap.setDevicePixelRatio(physical / logical)
-            icon.addPixmap(pixmap)
-        return icon
-
-    @staticmethod
-    def _paint_tray_pixmap(size: int) -> QPixmap:
-        """Axis-aligned opaque fills only — no diagonals, AA, or alpha edges."""
-        pixmap = QPixmap(size, size)
-        painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.fillRect(0, 0, size, size, QColor("#1a1f24"))
-
-        def px(n: int) -> int:
-            return (n * size) // 16
-
-        gap = max(1, px(1))
-        bar_w = max(2, px(3))
-        base = px(14)
-        bars = (
-            (px(2), px(9), QColor("#2fbf71")),
-            (px(2) + bar_w + gap, px(7), QColor("#2fbf71")),
-            (px(2) + 2 * (bar_w + gap), px(4), QColor("#ff4d4f")),
-        )
-        for x, top, color in bars:
-            painter.fillRect(x, top, bar_w, max(1, base - top), color)
-
-        painter.end()
-        return pixmap
 
     def show(self) -> None:
         self.tray.show()
