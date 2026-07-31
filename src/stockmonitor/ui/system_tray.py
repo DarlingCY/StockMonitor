@@ -3,16 +3,7 @@ from __future__ import annotations
 from functools import partial
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import (
-    QAction,
-    QActionGroup,
-    QColor,
-    QIcon,
-    QPainter,
-    QPainterPath,
-    QPen,
-    QPixmap,
-)
+from PySide6.QtGui import QAction, QActionGroup, QColor, QGuiApplication, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -149,64 +140,39 @@ class SystemTray:
         return action, edit
 
     def _create_icon(self) -> QIcon:
-        """Paint opaque tray glyphs — transparent AA edges show as a white halo."""
+        """Crisp tray icon: opaque integer fills at device-pixel sizes."""
         icon = QIcon()
-        for size in (16, 20, 24, 32):
-            icon.addPixmap(self._paint_tray_pixmap(size))
+        screen = QGuiApplication.primaryScreen()
+        dpr = float(screen.devicePixelRatio()) if screen is not None else 1.0
+        for logical in (16, 20, 24, 32):
+            physical = max(logical, int(round(logical * dpr)))
+            pixmap = self._paint_tray_pixmap(physical)
+            pixmap.setDevicePixelRatio(physical / logical)
+            icon.addPixmap(pixmap)
         return icon
 
     @staticmethod
     def _paint_tray_pixmap(size: int) -> QPixmap:
+        """Axis-aligned opaque fills only — no diagonals, AA, or alpha edges."""
         pixmap = QPixmap(size, size)
         painter = QPainter(pixmap)
-        use_aa = size >= 24
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, use_aa)
-
-        s = size / 16.0
-        painter.scale(s, s)
-
-        # Fully opaque tile: no alpha fringe on Windows taskbar.
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, False)
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#1a1f24"))
-        if use_aa:
-            painter.drawRoundedRect(0.5, 0.5, 15.0, 15.0, 3.0, 3.0)
-        else:
-            painter.drawRect(0, 0, 16, 16)
+        painter.fillRect(0, 0, size, size, QColor("#1a1f24"))
 
-        green = QColor("#2fbf71")
-        red = QColor("#ff4d4f")
-        ink = QColor("#f0f0f0")
+        def px(n: int) -> int:
+            return (n * size) // 16
 
-        painter.setBrush(green)
-        painter.drawRect(2, 9, 3, 5)
-        painter.drawRect(6, 10, 3, 4)
-        painter.setBrush(red)
-        painter.drawRect(10, 6, 3, 8)
-
-        painter.setPen(
-            QPen(
-                ink,
-                1.3 if use_aa else 1.0,
-                Qt.PenStyle.SolidLine,
-                Qt.PenCapStyle.RoundCap if use_aa else Qt.PenCapStyle.SquareCap,
-                Qt.PenJoinStyle.RoundJoin if use_aa else Qt.PenJoinStyle.MiterJoin,
-            )
+        gap = max(1, px(1))
+        bar_w = max(2, px(3))
+        base = px(14)
+        bars = (
+            (px(2), px(9), QColor("#2fbf71")),
+            (px(2) + bar_w + gap, px(7), QColor("#2fbf71")),
+            (px(2) + 2 * (bar_w + gap), px(4), QColor("#ff4d4f")),
         )
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        path = QPainterPath()
-        path.moveTo(1.5, 12)
-        path.lineTo(4, 8)
-        path.lineTo(7, 10)
-        path.lineTo(11, 5)
-        path.lineTo(13.5, 3)
-        painter.drawPath(path)
-
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(red)
-        if use_aa:
-            painter.drawEllipse(12.4, 1.6, 2.8, 2.8)
-        else:
-            painter.drawRect(13, 2, 2, 2)
+        for x, top, color in bars:
+            painter.fillRect(x, top, bar_w, max(1, base - top), color)
 
         painter.end()
         return pixmap
