@@ -3,7 +3,16 @@ from __future__ import annotations
 from functools import partial
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
+from PySide6.QtGui import (
+    QAction,
+    QActionGroup,
+    QColor,
+    QIcon,
+    QPainter,
+    QPainterPath,
+    QPen,
+    QPixmap,
+)
 from PySide6.QtWidgets import (
     QHBoxLayout,
     QLabel,
@@ -14,8 +23,6 @@ from PySide6.QtWidgets import (
     QWidget,
     QWidgetAction,
 )
-
-from stockmonitor.resources import icon_path
 
 
 class SystemTray:
@@ -142,21 +149,67 @@ class SystemTray:
         return action, edit
 
     def _create_icon(self) -> QIcon:
-        path = icon_path()
-        if path is not None:
-            icon = QIcon(str(path))
-            if not icon.isNull():
-                return icon
-        # Fallback if assets are missing (e.g. incomplete install).
-        pixmap = QPixmap(16, 16)
-        pixmap.fill(Qt.GlobalColor.transparent)
+        """Paint opaque tray glyphs — transparent AA edges show as a white halo."""
+        icon = QIcon()
+        for size in (16, 20, 24, 32):
+            icon.addPixmap(self._paint_tray_pixmap(size))
+        return icon
+
+    @staticmethod
+    def _paint_tray_pixmap(size: int) -> QPixmap:
+        pixmap = QPixmap(size, size)
         painter = QPainter(pixmap)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing)
+        use_aa = size >= 24
+        painter.setRenderHint(QPainter.RenderHint.Antialiasing, use_aa)
+
+        s = size / 16.0
+        painter.scale(s, s)
+
+        # Fully opaque tile: no alpha fringe on Windows taskbar.
         painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(QColor("#2ECC71"))
-        painter.drawEllipse(1, 1, 14, 14)
+        painter.setBrush(QColor("#1a1f24"))
+        if use_aa:
+            painter.drawRoundedRect(0.5, 0.5, 15.0, 15.0, 3.0, 3.0)
+        else:
+            painter.drawRect(0, 0, 16, 16)
+
+        green = QColor("#2fbf71")
+        red = QColor("#ff4d4f")
+        ink = QColor("#f0f0f0")
+
+        painter.setBrush(green)
+        painter.drawRect(2, 9, 3, 5)
+        painter.drawRect(6, 10, 3, 4)
+        painter.setBrush(red)
+        painter.drawRect(10, 6, 3, 8)
+
+        painter.setPen(
+            QPen(
+                ink,
+                1.3 if use_aa else 1.0,
+                Qt.PenStyle.SolidLine,
+                Qt.PenCapStyle.RoundCap if use_aa else Qt.PenCapStyle.SquareCap,
+                Qt.PenJoinStyle.RoundJoin if use_aa else Qt.PenJoinStyle.MiterJoin,
+            )
+        )
+        painter.setBrush(Qt.BrushStyle.NoBrush)
+        path = QPainterPath()
+        path.moveTo(1.5, 12)
+        path.lineTo(4, 8)
+        path.lineTo(7, 10)
+        path.lineTo(11, 5)
+        path.lineTo(13.5, 3)
+        painter.drawPath(path)
+
+        painter.setPen(Qt.PenStyle.NoPen)
+        painter.setBrush(red)
+        if use_aa:
+            painter.drawEllipse(12.4, 1.6, 2.8, 2.8)
+        else:
+            painter.drawRect(13, 2, 2, 2)
+
         painter.end()
-        return QIcon(pixmap)
+        return pixmap
 
     def show(self) -> None:
         self.tray.show()
