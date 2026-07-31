@@ -50,9 +50,10 @@ class UpdateController(QObject):
     install prompt is shown for manual checks or when the user opts in.
     """
 
-    def __init__(self, notify=None, parent=None) -> None:
+    def __init__(self, notify=None, request_exit=None, parent=None) -> None:
         super().__init__(parent)
         self._notify = notify  # callable(title, message) for tray balloons
+        self._request_exit = request_exit  # callable() for full app shutdown
         self._check_worker: _CheckWorker | None = None
         self._download_worker: _DownloadWorker | None = None
         self._progress_dialog: QProgressDialog | None = None
@@ -222,7 +223,12 @@ class UpdateController(QObject):
             return
 
         if updater.launch_installer(installer_path):
-            QApplication.quit()
+            # Full shutdown (timers/threads/tray/watchdog), not bare quit —
+            # otherwise StockMonitor.exe stays locked and the installer fails.
+            if self._request_exit is not None:
+                self._request_exit()
+            else:
+                QApplication.quit()
         else:
             self._busy = False
             QMessageBox.warning(

@@ -142,7 +142,10 @@ class StockMonitorApp:
         )
         self.tray.show()
 
-        self.update_controller = UpdateController(notify=self.tray.show_message)
+        self.update_controller = UpdateController(
+            notify=self.tray.show_message,
+            request_exit=lambda: self.exit_app(force=True),
+        )
 
         self.refresh_timer = QTimer()
         self.refresh_timer.setInterval(max(1, settings.refresh_interval_seconds) * 1000)
@@ -400,12 +403,13 @@ class StockMonitorApp:
     def check_for_update(self) -> None:
         self.update_controller.check(silent=False)
 
-    def exit_app(self) -> None:
+    def exit_app(self, *, force: bool = False) -> None:
         pos = self.window.pos()
         self._save_position_timer.stop()
         self.state_store.save_position(pos.x(), pos.y())
         self.state_store.save_symbols(self.symbols)
         self.window.set_keep_visible_enabled(False)
+        self.window.hide()
         self._topmost_burst_timer.stop()
         self.refresh_timer.stop()
         self.rotate_timer.stop()
@@ -413,8 +417,14 @@ class StockMonitorApp:
         if self._quote_worker is not None and self._quote_worker.isRunning():
             # Wait long enough to cover the network timeout so we never destroy
             # a still-running QThread during interpreter teardown.
-            if not self._quote_worker.wait(9000):
-                logger.warning("Quote worker did not finish before exit")
+            wait_ms = 2000 if force else 9000
+            if not self._quote_worker.wait(wait_ms):
+                if force:
+                    logger.warning("Force-stopping quote worker for update exit")
+                    self._quote_worker.terminate()
+                    self._quote_worker.wait(1000)
+                else:
+                    logger.warning("Quote worker did not finish before exit")
         self.api.close()
         self.update_controller.shutdown()
         self._foreground_watchdog.stop()

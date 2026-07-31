@@ -29,6 +29,8 @@ SetupIconFile=..\assets\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern
+; Close StockMonitor.exe if it still holds files during upgrade.
+CloseApplications=yes
 ; 权限设置
 PrivilegesRequired=lowest
 PrivilegesRequiredOverridesAllowed=dialog

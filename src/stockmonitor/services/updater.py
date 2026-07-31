@@ -171,19 +171,61 @@ def download_installer(
 
 
 def launch_installer(installer_path: Path) -> bool:
-    """Start the installer and signal the app should exit so it can replace files.
+    """Launch the installer after this process has fully exited.
 
-    Returns True if the installer was launched successfully.
+    Starts a detached waiter that polls until the current PID disappears,
+    then runs the installer. That way Inno Setup can replace locked files.
     """
     if not installer_path.exists():
         logger.error("Installer not found: {}", installer_path)
         return False
+
+    installer = str(installer_path.resolve())
     try:
-        # Detach the installer so it survives this process exiting.
-        if sys.platform == "win32":
-            os.startfile(str(installer_path))  # noqa: S606 - trusted local installer
-        else:
-            subprocess.Popen([str(installer_path)])  # noqa: S603
+        if sys.platform != "win32":
+            subprocess.Popen([installer])  # noqa: S603
+            return True
+
+        pid = os.getpid()
+        bat_path = Path(tempfile.gettempdir()) / f"stockmonitor-update-{pid}.bat"
+        bat_path.write_text(
+            "\r\n".join(
+                [
+                    "@echo off",
+                    "setlocal",
+                    f":wait",
+                    f'tasklist /FI "PID eq {pid}" 2>nul | find "{pid}" >nul',
+                    "if not errorlevel 1 (",
+                    "  timeout /t 1 /nobreak >nul",
+                    "  goto wait",
+                    ")",
+                    # Brief settle so file locks are released.
+                    "timeout /t 1 /nobreak >nul",
+                    f'start "" "{installer}"',
+                    'del "%~f0" >nul 2>&1',
+                    "",
+                ]
+            ),
+            encoding="utf-8",
+        )
+        # Detach the waiter so it outlives this process; CREATE_NO_WINDOW
+        # keeps the polling console invisible.
+        creationflags = (
+            getattr(subprocess, "DETACHED_PROCESS", 0x00000008)
+            | getattr(subprocess, "CREATE_NEW_PROCESS_GROUP", 0x00000200)
+            | 0x08000000  # CREATE_NO_WINDOW
+        )
+        subprocess.Popen(  # noqa: S603
+            ["cmd.exe", "/c", str(bat_path)],
+            creationflags=creationflags,
+            close_fds=True,
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        logger.info(
+            "Scheduled installer {} to run after PID {} exits", installer, pid
+        )
         return True
     except Exception as exc:  # noqa: BLE001
         logger.exception("Failed to launch installer: {}", exc)
