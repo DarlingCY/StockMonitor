@@ -6,4 +6,3 @@ class StockQuote(BaseModel):
     name: str
     price: float
     change_percent: float
-    source: str = "unknown"

@@ -65,8 +65,10 @@ class StockMonitorApp:
         self.state_store = StateStore(settings.state_file)
         self.api = StockAPI()
         self.symbols = self.state_store.load_symbols() or settings.symbols_list
+        # Repair stale Run entries (e.g. console Scripts\stockmonitor) so boot
+        # does not flash a CMD window.
+        autostart.sync_command()
         self.autostart_enabled = autostart.is_enabled()
-        self.state_store.save_autostart(self.autostart_enabled)
         self.visibility_mode = self.state_store.load_visibility_mode() or "trading_time"
         saved_offsets = self.state_store.load_offsets()
         if saved_offsets:
@@ -87,10 +89,7 @@ class StockMonitorApp:
         self._save_position_timer.setInterval(400)
         self._save_position_timer.timeout.connect(self._flush_pending_position)
 
-        self.window = FloatingBar(
-            topmost=settings.auto_topmost,
-            background_color=settings.background_color,
-        )
+        self.window = FloatingBar(topmost=settings.auto_topmost)
         self.window.moved.connect(self._on_window_moved)
         self.window.keep_visible_requested.connect(self._restore_window_visibility)
         if self._should_show_window():
@@ -125,7 +124,7 @@ class StockMonitorApp:
         self.tray = SystemTray(
             on_add_symbol=self.add_symbol,
             on_remove_symbol=self.remove_symbol,
-            get_symbols=self.get_symbols,
+            get_symbol_entries=self.get_symbol_entries,
             on_set_horizontal_offset=self.set_horizontal_offset,
             on_set_vertical_offset=self.set_vertical_offset,
             get_offsets=self.get_offsets,
@@ -136,7 +135,6 @@ class StockMonitorApp:
             on_check_update=self.check_for_update,
             on_exit=self.exit_app,
         )
-        self.tray.update_symbols(self.symbols)
         self.tray.show()
 
         self.update_controller = UpdateController(notify=self.tray.show_message)
@@ -154,10 +152,12 @@ class StockMonitorApp:
         # Periodic (daily) update check.
         self.update_check_timer = QTimer()
         self.update_check_timer.setInterval(24 * 60 * 60 * 1000)
-        self.update_check_timer.timeout.connect(self._auto_check_update)
+        self.update_check_timer.timeout.connect(
+            lambda: self.update_controller.check(silent=True)
+        )
         self.update_check_timer.start()
         # Initial check shortly after startup so the UI is up first.
-        QTimer.singleShot(8000, self._auto_check_update)
+        QTimer.singleShot(8000, lambda: self.update_controller.check(silent=True))
 
         self.refresh_quotes()
 
@@ -265,7 +265,6 @@ class StockMonitorApp:
 
         self.symbols.append(normalized)
         self.state_store.save_symbols(self.symbols)
-        self.tray.update_symbols(self.symbols)
         self.refresh_quotes()
         self.tray.show_message("添加成功", f"已添加股票代码 {normalized}")
         return True
@@ -275,8 +274,8 @@ class StockMonitorApp:
             return
         self.symbols = [item for item in self.symbols if item != symbol]
         self.state_store.save_symbols(self.symbols)
-        self.tray.update_symbols(self.symbols)
         self._quotes = [quote for quote in self._quotes if quote.symbol != symbol]
+        self.tray.update_symbols(self.get_symbol_entries())
         self._display_index = 0
         if self._quotes:
             self.window.update_quote(self._quotes[0])
@@ -285,8 +284,9 @@ class StockMonitorApp:
         else:
             self.window.show_error("No symbols configured")
 
-    def get_symbols(self) -> list[str]:
-        return list(self.symbols)
+    def get_symbol_entries(self) -> list[tuple[str, str]]:
+        names = {quote.symbol: quote.name for quote in self._quotes if quote.name}
+        return [(symbol, names.get(symbol, symbol)) for symbol in self.symbols]
 
     def get_offsets(self) -> tuple[int, int]:
         return self.horizontal_offset, self.vertical_offset
@@ -309,7 +309,6 @@ class StockMonitorApp:
         success = autostart.set_enabled(checked)
         if success:
             self.autostart_enabled = checked
-            self.state_store.save_autostart(checked)
         self.tray.set_autostart_checked(self.autostart_enabled)
 
     def set_visibility_mode(self, mode: str) -> None:
@@ -330,16 +329,7 @@ class StockMonitorApp:
         )
 
     def _apply_window_position(self, pos: QPoint) -> None:
-        logger.info(
-            "_apply_window_position PRE-move: frame={}, move_to={}",
-            self.window.frameGeometry().getRect(),
-            (pos.x(), pos.y()),
-        )
         self.window.move(pos)
-        logger.info(
-            "_apply_window_position POST-move: frame={}",
-            self.window.frameGeometry().getRect(),
-        )
 
     def _handle_application_state_change(
         self, state: Qt.ApplicationState
@@ -403,12 +393,7 @@ class StockMonitorApp:
         self.window.update_quote(self._quotes[self._display_index])
 
     def check_for_update(self) -> None:
-        """Manual update check triggered from the tray menu."""
         self.update_controller.check(silent=False)
-
-    def _auto_check_update(self) -> None:
-        """Automatic (startup/daily) check; stays silent unless an update exists."""
-        self.update_controller.check(silent=True)
 
     def exit_app(self) -> None:
         pos = self.window.pos()

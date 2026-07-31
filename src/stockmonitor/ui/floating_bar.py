@@ -1,8 +1,7 @@
 from __future__ import annotations
 
-from loguru import logger
 from PySide6.QtCore import QEvent, QPoint, Qt, Signal
-from PySide6.QtGui import QGuiApplication, QMouseEvent, QPaintEvent, QPainter
+from PySide6.QtGui import QGuiApplication, QMouseEvent
 from PySide6.QtWidgets import QLabel, QHBoxLayout, QWidget
 
 from stockmonitor.models.quote import StockQuote
@@ -13,11 +12,10 @@ class FloatingBar(QWidget):
     moved = Signal(int, int)
     keep_visible_requested = Signal()
 
-    def __init__(self, topmost: bool = True, background_color: str = "transparent"):
+    def __init__(self, topmost: bool = True):
         super().__init__()
         self.setObjectName("FloatingBar")
         self._keep_visible_enabled = True
-        self._corner_radius = 8
         flags = (
             Qt.WindowType.FramelessWindowHint
             | Qt.WindowType.Window
@@ -56,13 +54,6 @@ class FloatingBar(QWidget):
         self.setLayout(layout)
         self._sync_size_to_content()
 
-    def paintEvent(self, event: QPaintEvent) -> None:  # noqa: N802
-        painter = QPainter(self)
-        painter.setRenderHint(QPainter.RenderHint.Antialiasing, True)
-        painter.setPen(Qt.PenStyle.NoPen)
-        painter.setBrush(Qt.BrushStyle.NoBrush)
-        super().paintEvent(event)
-
     def _sync_size_to_content(self) -> None:
         previous_pos = self.pos()
         old_height = self.height() or self._logical_height
@@ -97,116 +88,46 @@ class FloatingBar(QWidget):
         win_width = self.width() or self._logical_width
         win_height = self.height() or self._logical_height
 
-        # Get the screen where the window is currently located
         current_screen = self.screen()
         if current_screen is None:
             current_screen = QGuiApplication.primaryScreen()
         if current_screen is None:
             return pos
 
-        # Try to find screen at the new position
         screen = QGuiApplication.screenAt(pos)
         if screen is None:
-            # If position is outside all screens, use the current screen
             screen = current_screen
 
         area = screen.availableGeometry()
         screen_geometry = screen.geometry()
 
-        # Horizontal still respects available work area so it won't overlap
-        # left/right taskbar. Vertical uses full screen geometry so the window
-        # can move into top/bottom taskbar space when needed.
+        # Horizontal respects available work area (left/right taskbar).
+        # Vertical uses full screen geometry so the bar can sit in taskbar space.
         min_x = area.left()
         max_x = area.left() + max(0, area.width() - win_width)
         min_y = screen_geometry.top()
         max_y = screen_geometry.top() + max(0, screen_geometry.height() - win_height)
 
-        x = max(min_x, min(pos.x(), max_x))
-        y = max(min_y, min(pos.y(), max_y))
-
-        logger.debug(
-            "clamp_to_work_area: input={}, screen={}, area={}, logical=({},{}), min=({},{}), max=({},{}), output={}",
-            (pos.x(), pos.y()),
-            screen.geometry().getRect(),
-            area.getRect(),
-            win_width,
-            win_height,
-            min_x,
-            min_y,
-            max_x,
-            max_y,
-            (x, y),
+        return QPoint(
+            max(min_x, min(pos.x(), max_x)),
+            max(min_y, min(pos.y(), max_y)),
         )
-        return QPoint(x, y)
-
-    def clamp_offset_to_screen(self, offset: QPoint) -> QPoint:
-        screen = self.screen() or QGuiApplication.primaryScreen()
-        if screen is None:
-            return offset
-
-        area = screen.availableGeometry()
-        screen_geometry = screen.geometry()
-        width = self.width() or self._logical_width
-        height = self.height() or self._logical_height
-        max_x = max(0, area.width() - width)
-        max_y = max(0, screen_geometry.height() - height)
-        x = max(0, min(offset.x(), max_x))
-        y = max(0, min(offset.y(), max_y))
-        return QPoint(x, y)
 
     def anchor_to_global(
         self,
-        horizontal_align: str = "",
-        vertical_align: str = "",
         horizontal_offset: int = 0,
         vertical_offset: int = 0,
     ) -> QPoint:
-        """Calculate optimal position based on taskbar position and alignment.
-
-        Uses Win32 API to detect taskbar position and calculates the optimal
-        window position based on the specified horizontal and vertical alignment.
-        Uses the pre-set widget dimensions (_logical_width, _logical_height)
-        to avoid frameGeometry timing issues.
-
-        Position is calculated as: availableGeometry.top-left + margin + offset
-
-        Args:
-            horizontal_align: Kept for API compatibility, not used for positioning
-            vertical_align: Kept for API compatibility, not used for positioning
-            horizontal_offset: Additional horizontal offset in pixels (positive = right)
-            vertical_offset: Additional vertical offset in pixels (positive = down)
-        """
         position_info = TaskbarUtils.calculate_optimal_position(
             window_width=self._logical_width,
             window_height=self._logical_height,
             margin=0,
-            horizontal_align=horizontal_align,
-            vertical_align=vertical_align,
             horizontal_offset=horizontal_offset,
             vertical_offset=vertical_offset,
         )
-
-        x = position_info["x"]
-        y = position_info["y"]
-
-        logger.info(
-            "Anchor position computed: offset=({}, {}), logical=({},{}), target=({}, {}), position={}",
-            horizontal_offset,
-            vertical_offset,
-            self._logical_width,
-            self._logical_height,
-            x,
-            y,
-            position_info["position"],
+        return self.clamp_to_work_area(
+            QPoint(position_info["x"], position_info["y"])
         )
-
-        return self.clamp_to_work_area(QPoint(x, y))
-
-    def _frame_width(self) -> int:
-        return max(self.frameGeometry().width(), self.width())
-
-    def _frame_height(self) -> int:
-        return max(self.frameGeometry().height(), self.height())
 
     def set_keep_visible_enabled(self, enabled: bool) -> None:
         self._keep_visible_enabled = enabled

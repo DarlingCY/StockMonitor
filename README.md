@@ -9,10 +9,9 @@
 - 使用腾讯行情接口（`https://qt.gtimg.cn/q=...`）批量获取：名称 / 现价 / 涨跌幅
 - UI 每次只显示 1 只股票，并每 3 秒自动轮播到下一只
 - 数据刷新频率可配置（`refresh_interval_seconds`），与轮播频率分离
-- 悬浮条背景色可配置（默认透明），透明背景下文字可读
 - 请求失败时 UI 显示错误状态，不崩溃
 - pywin32 扩展样式：`WS_EX_TOOLWINDOW`
-- 系统托盘：二级菜单内输入增加股票代码、删除股票代码、退出
+- 系统托盘：增加/删除股票、位置偏移、显示模式、开机自启、检查更新、退出
 - 自动更新：启动后及每天定时检查 GitHub Release 最新版本，发现新版本时托盘通知并支持一键下载安装（托盘菜单亦有“检查更新”手动项）
 - 增加股票代码时会先校验代码是否真实存在，再加入监控列表
 - 右键菜单支持直接配置位置偏移：横向偏移 / 纵向偏移
@@ -67,7 +66,6 @@ refresh_interval_seconds=15
 horizontal_offset=0
 vertical_offset=0
 auto_topmost=true
-background_color=rgba(24, 24, 24, 220)
 ```
 
 说明：
@@ -77,7 +75,6 @@ background_color=rgba(24, 24, 24, 220)
 - `horizontal_offset`: 横向偏移，正数向右，负数向左
 - `vertical_offset`: 纵向偏移，正数向下，负数向上
 - `auto_topmost`: 是否自动置顶
-- `background_color`: 悬浮条背景色，默认 `rgba(24, 24, 24, 220)`（可填 `transparent` 或 `rgba(...)` 等）
 
 ### A 股代码映射规则（腾讯接口）
 

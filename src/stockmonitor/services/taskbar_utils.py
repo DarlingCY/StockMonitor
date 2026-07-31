@@ -20,16 +20,11 @@ class TaskbarPosition(Enum):
 
 @dataclass
 class TaskbarInfo:
-    hwnd: int
     left: int
     top: int
-    right: int
-    bottom: int
     width: int
     height: int
     position: TaskbarPosition
-    screen_width: int
-    screen_height: int
 
 
 class TaskbarUtils:
@@ -37,7 +32,6 @@ class TaskbarUtils:
 
     @staticmethod
     def get_taskbar_info() -> TaskbarInfo | None:
-        """Get taskbar window handle, position, and size."""
         try:
             user32 = ctypes.windll.user32
 
@@ -61,92 +55,14 @@ class TaskbarUtils:
                 position = TaskbarPosition.RIGHT
 
             return TaskbarInfo(
-                hwnd=taskbar_hwnd,
                 left=rect.left,
                 top=rect.top,
-                right=rect.right,
-                bottom=rect.bottom,
                 width=rect.right - rect.left,
                 height=rect.bottom - rect.top,
                 position=position,
-                screen_width=screen_width,
-                screen_height=screen_height,
             )
         except Exception as e:
             logger.warning("Failed to get taskbar info: {}", e)
-            return None
-
-    @staticmethod
-    def get_taskbar_buttons_area() -> dict | None:
-        """Get taskbar buttons area info."""
-        try:
-            user32 = ctypes.windll.user32
-
-            taskbar_hwnd = user32.FindWindowW("Shell_TrayWnd", None)
-            if not taskbar_hwnd:
-                return None
-
-            task_list_hwnd = user32.FindWindowExW(
-                taskbar_hwnd, None, "MSTaskSwWClass", None
-            )
-            if not task_list_hwnd:
-                reb_band_hwnd = user32.FindWindowExW(
-                    taskbar_hwnd, None, "ReBarWindow32", None
-                )
-                if reb_band_hwnd:
-                    task_list_hwnd = user32.FindWindowExW(
-                        reb_band_hwnd, None, "MSTaskSwWClass", None
-                    )
-
-            if not task_list_hwnd:
-                return None
-
-            rect = wintypes.RECT()
-            user32.GetWindowRect(task_list_hwnd, ctypes.byref(rect))
-
-            return {
-                "hwnd": task_list_hwnd,
-                "left": rect.left,
-                "top": rect.top,
-                "right": rect.right,
-                "bottom": rect.bottom,
-                "width": rect.right - rect.left,
-                "height": rect.bottom - rect.top,
-            }
-        except Exception as e:
-            logger.warning("Failed to get taskbar buttons area: {}", e)
-            return None
-
-    @staticmethod
-    def get_system_tray_area() -> dict | None:
-        """Get system tray area info."""
-        try:
-            user32 = ctypes.windll.user32
-
-            taskbar_hwnd = user32.FindWindowW("Shell_TrayWnd", None)
-            if not taskbar_hwnd:
-                return None
-
-            tray_notify_hwnd = user32.FindWindowExW(
-                taskbar_hwnd, None, "TrayNotifyWnd", None
-            )
-            if not tray_notify_hwnd:
-                return None
-
-            rect = wintypes.RECT()
-            user32.GetWindowRect(tray_notify_hwnd, ctypes.byref(rect))
-
-            return {
-                "hwnd": tray_notify_hwnd,
-                "left": rect.left,
-                "top": rect.top,
-                "right": rect.right,
-                "bottom": rect.bottom,
-                "width": rect.right - rect.left,
-                "height": rect.bottom - rect.top,
-            }
-        except Exception as e:
-            logger.warning("Failed to get system tray area: {}", e)
             return None
 
     @staticmethod
@@ -154,36 +70,23 @@ class TaskbarUtils:
         window_width: int,
         window_height: int,
         margin: int = 0,
-        horizontal_align: str = "center",
-        vertical_align: str = "bottom",
         horizontal_offset: int = 0,
         vertical_offset: int = 0,
     ) -> dict:
-        """Calculate optimal window position based on taskbar position and alignment.
+        """Position as availableGeometry.top-left + margin + offset.
 
-        Uses Qt's screen geometry to ensure consistent coordinate system for
-        both calculation and positioning.
-
-        Position is calculated as: availableGeometry.top-left + margin + offset
-
-        Args:
-            window_width: Window width in pixels (kept for API compatibility)
-            window_height: Window height in pixels (kept for API compatibility)
-            margin: Margin from screen edges in pixels
-            horizontal_align: Kept for API compatibility, not used for positioning
-            vertical_align: Kept for API compatibility, not used for positioning
-            horizontal_offset: Additional horizontal offset in pixels
-            vertical_offset: Additional vertical offset in pixels
-
-        Returns:
-            dict with "x", "y", and "position" keys
+        Once the vertical offset would push past the screen bottom, stick to
+        the bottom edge instead.
         """
         taskbar_info = TaskbarUtils.get_taskbar_info()
         if not taskbar_info:
             logger.warning("No taskbar info, using default position")
-            return {"x": margin + horizontal_offset, "y": margin + vertical_offset, "position": "default"}
+            return {
+                "x": margin + horizontal_offset,
+                "y": margin + vertical_offset,
+                "position": "default",
+            }
 
-        # Use Qt to find the screen where taskbar is located
         taskbar_screen = QGuiApplication.screenAt(
             QPoint(
                 taskbar_info.left + taskbar_info.width // 2,
@@ -194,95 +97,18 @@ class TaskbarUtils:
             taskbar_screen = QGuiApplication.primaryScreen()
         if taskbar_screen is None:
             logger.warning("No screen found, using default position")
-            return {"x": margin + horizontal_offset, "y": margin + vertical_offset, "position": "default"}
+            return {
+                "x": margin + horizontal_offset,
+                "y": margin + vertical_offset,
+                "position": "default",
+            }
 
-        # Use available geometry (excludes taskbar) for top-left-origin
-        # positioning, but switch to an explicit bottom-sticky rule once the
-        # requested offset would push the window past the screen bottom.
         area = taskbar_screen.availableGeometry()
         screen_geometry = taskbar_screen.geometry()
 
-        logger.debug(
-            "Taskbar info: pos={}, rect=({},{},{},{}), area=({},{},{},{})",
-            taskbar_info.position.value,
-            taskbar_info.left,
-            taskbar_info.top,
-            taskbar_info.right,
-            taskbar_info.bottom,
-            area.left(),
-            area.top(),
-            area.width(),
-            area.height(),
-        )
-
-        # Horizontal always uses the available area's left edge as origin.
         x = area.left() + margin + horizontal_offset
-
         top_origin_y = area.top() + margin + vertical_offset
         bottom_y = screen_geometry.bottom() + 1 - window_height - margin
         if top_origin_y >= bottom_y:
-            y = bottom_y
-            position_str = "bottom-sticky"
-        else:
-            y = top_origin_y
-            position_str = "top-left-origin"
-
-        logger.debug(
-            "Calculated position: x={}, y={}, offset=({},{}), top_origin_y={}, bottom_y={}, position={}",
-            x,
-            y,
-            horizontal_offset,
-            vertical_offset,
-            top_origin_y,
-            bottom_y,
-            position_str,
-        )
-
-        return {"x": int(x), "y": int(y), "position": position_str}
-
-    @staticmethod
-    def set_window_pos(
-        hwnd: int,
-        x: int,
-        y: int,
-        width: int = 0,
-        height: int = 0,
-        flags: int = 0x0001 | 0x0004,
-    ) -> bool:
-        """Set window position using Win32 API.
-
-        Args:
-            hwnd: Window handle
-            x: New x position
-            y: New y position
-            width: New width (0 to keep current)
-            height: New height (0 to keep current)
-            flags: SetWindowPos flags (default: SWP_NOSIZE | SWP_NOZORDER)
-
-        Returns:
-            True if successful, False otherwise
-        """
-        try:
-            user32 = ctypes.windll.user32
-            SWP_NOZORDER = 0x0004
-            SWP_NOSIZE = 0x0001
-            SWP_NOACTIVATE = 0x0010
-
-            if width == 0 and height == 0:
-                flags |= SWP_NOSIZE
-            if flags & SWP_NOZORDER == 0:
-                flags |= SWP_NOZORDER
-
-            result = user32.SetWindowPos(
-                hwnd,
-                0,
-                x,
-                y,
-                width,
-                height,
-                flags | SWP_NOACTIVATE,
-            )
-            return result != 0
-        except Exception as e:
-            logger.warning("Failed to set window position: {}", e)
-            return False
+            return {"x": int(x), "y": int(bottom_y), "position": "bottom-sticky"}
+        return {"x": int(x), "y": int(top_origin_y), "position": "top-left-origin"}

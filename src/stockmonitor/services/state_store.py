@@ -18,19 +18,27 @@ class StateStore:
             logger.warning("Failed to load state file: {}", exc)
             return {}
 
+    def _update(self, **fields) -> None:
+        try:
+            data = self._load_data()
+            data.update(fields)
+            self.path.write_text(
+                json.dumps(data, ensure_ascii=False, indent=2),
+                encoding="utf-8",
+            )
+        except Exception as exc:
+            logger.warning("Failed to save state: {}", exc)
+
     def load_position(self) -> tuple[int, int] | None:
         try:
             data = self._load_data()
-            x = int(data.get("x"))
-            y = int(data.get("y"))
-            return x, y
+            return int(data["x"]), int(data["y"])
         except Exception as exc:
             logger.warning("Failed to load window state: {}", exc)
             return None
 
     def load_symbols(self) -> list[str] | None:
-        data = self._load_data()
-        symbols = data.get("symbols")
+        symbols = self._load_data().get("symbols")
         if not isinstance(symbols, list):
             return None
         cleaned = [
@@ -47,14 +55,6 @@ class StateStore:
             return "manual"
         return None
 
-    def load_alignment(self) -> tuple[str, str] | None:
-        data = self._load_data()
-        horizontal_align = data.get("horizontal_align")
-        vertical_align = data.get("vertical_align")
-        if not isinstance(horizontal_align, str) or not isinstance(vertical_align, str):
-            return None
-        return horizontal_align, vertical_align
-
     def load_offsets(self) -> tuple[int, int] | None:
         data = self._load_data()
         horizontal_offset = data.get("horizontal_offset")
@@ -67,42 +67,13 @@ class StateStore:
             return None
 
     def save_offsets(self, horizontal_offset: int, vertical_offset: int) -> None:
-        try:
-            data = self._load_data()
-            data.update(
-                {
-                    "horizontal_offset": horizontal_offset,
-                    "vertical_offset": vertical_offset,
-                }
-            )
-            self.path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception as exc:
-            logger.warning("Failed to save offsets state: {}", exc)
-
-    def load_autostart(self) -> bool | None:
-        data = self._load_data()
-        value = data.get("autostart")
-        if isinstance(value, bool):
-            return value
-        return None
-
-    def save_autostart(self, enabled: bool) -> None:
-        try:
-            data = self._load_data()
-            data.update({"autostart": enabled})
-            self.path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception as exc:
-            logger.warning("Failed to save autostart state: {}", exc)
+        self._update(
+            horizontal_offset=horizontal_offset,
+            vertical_offset=vertical_offset,
+        )
 
     def load_visibility_mode(self) -> str | None:
-        data = self._load_data()
-        mode = data.get("visibility_mode")
+        mode = self._load_data().get("visibility_mode")
         if mode in {"always", "trading_time"}:
             return mode
         return None
@@ -110,51 +81,10 @@ class StateStore:
     def save_visibility_mode(self, mode: str) -> None:
         if mode not in {"always", "trading_time"}:
             return
-        try:
-            data = self._load_data()
-            data.update({"visibility_mode": mode})
-            self.path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception as exc:
-            logger.warning("Failed to save visibility mode state: {}", exc)
+        self._update(visibility_mode=mode)
 
     def save_position(self, x: int, y: int) -> None:
-        try:
-            data = self._load_data()
-            data.update({"x": x, "y": y, "position_mode": "manual"})
-            self.path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception as exc:
-            logger.warning("Failed to save window state: {}", exc)
-
-    def save_alignment(self, horizontal_align: str, vertical_align: str) -> None:
-        try:
-            data = self._load_data()
-            data.update(
-                {
-                    "horizontal_align": horizontal_align,
-                    "vertical_align": vertical_align,
-                    "position_mode": "anchor",
-                }
-            )
-            self.path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception as exc:
-            logger.warning("Failed to save alignment state: {}", exc)
+        self._update(x=x, y=y, position_mode="manual")
 
     def save_symbols(self, symbols: list[str]) -> None:
-        try:
-            data = self._load_data()
-            data.update({"symbols": symbols})
-            self.path.write_text(
-                json.dumps(data, ensure_ascii=False, indent=2),
-                encoding="utf-8",
-            )
-        except Exception as exc:
-            logger.warning("Failed to save symbols state: {}", exc)
+        self._update(symbols=symbols)

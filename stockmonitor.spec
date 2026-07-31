@@ -13,11 +13,8 @@ cn_stock_holidays_dir = Path(cn_stock_holidays.__file__).resolve().parent
 
 hiddenimports = [
     "pywintypes",
-    "pythoncom",
-    "win32api",
     "win32con",
     "win32gui",
-    "win32process",
     "PySide6.QtCore",
     "PySide6.QtGui",
     "PySide6.QtWidgets",

@@ -84,7 +84,6 @@ class StockAPI:
                     name=name,
                     price=price,
                     change_percent=change_percent,
-                    source="tencent",
                 )
             )
 

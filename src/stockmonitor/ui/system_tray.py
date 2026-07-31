@@ -6,6 +6,7 @@ from PySide6.QtCore import Qt
 from PySide6.QtGui import QAction, QActionGroup, QColor, QIcon, QPainter, QPixmap
 from PySide6.QtWidgets import (
     QHBoxLayout,
+    QLabel,
     QLineEdit,
     QMenu,
     QPushButton,
@@ -20,7 +21,7 @@ class SystemTray:
         self,
         on_add_symbol,
         on_remove_symbol,
-        get_symbols,
+        get_symbol_entries,
         on_set_horizontal_offset,
         on_set_vertical_offset,
         get_offsets,
@@ -35,7 +36,7 @@ class SystemTray:
         self.tray.setIcon(self._create_icon())
         self.tray.setToolTip("StockMonitor")
         self._on_remove_symbol = on_remove_symbol
-        self._get_symbols = get_symbols
+        self._get_symbol_entries = get_symbol_entries
         self._get_offsets = get_offsets
         self._get_autostart = get_autostart
         self._get_visibility_mode = get_visibility_mode
@@ -43,51 +44,20 @@ class SystemTray:
         self._on_set_vertical_offset = on_set_vertical_offset
 
         self.menu = QMenu()
-        self.add_symbol_menu = QMenu("增加股票代码")
+        self.add_symbol_menu = QMenu("增加股票")
         self.add_symbol_widget_action = QWidgetAction(self.add_symbol_menu)
-        self.remove_symbol_menu = QMenu("删除股票代码")
+        self.remove_symbol_menu = QMenu("删除股票")
         self.remove_symbol_menu.aboutToShow.connect(self._rebuild_remove_symbol_menu)
         self.position_menu = QMenu("位置配置")
         self.position_menu.aboutToShow.connect(self._refresh_position_menu)
         self.visibility_menu = QMenu("显示模式")
 
-        # Horizontal offset input
-        self.horizontal_offset_action = QWidgetAction(self.position_menu)
-        self.horizontal_offset_widget = QWidget(self.position_menu)
-        self.horizontal_offset_layout = QHBoxLayout(self.horizontal_offset_widget)
-        self.horizontal_offset_layout.setContentsMargins(8, 4, 8, 4)
-        self.horizontal_offset_layout.setSpacing(6)
-        self.horizontal_offset_input = QLineEdit(self.horizontal_offset_widget)
-        self.horizontal_offset_input.setPlaceholderText("横向偏移")
-        self.horizontal_offset_input.setFixedWidth(70)
-        self.horizontal_offset_button = QPushButton(
-            "设置", self.horizontal_offset_widget
+        self.horizontal_offset_action, self.horizontal_offset_input = (
+            self._make_offset_row("横向偏移", self._submit_horizontal_offset)
         )
-        self.horizontal_offset_button.setFixedWidth(48)
-        self.horizontal_offset_button.clicked.connect(self._submit_horizontal_offset)
-        self.horizontal_offset_input.returnPressed.connect(
-            self._submit_horizontal_offset
+        self.vertical_offset_action, self.vertical_offset_input = (
+            self._make_offset_row("纵向偏移", self._submit_vertical_offset)
         )
-        self.horizontal_offset_layout.addWidget(self.horizontal_offset_input)
-        self.horizontal_offset_layout.addWidget(self.horizontal_offset_button)
-        self.horizontal_offset_action.setDefaultWidget(self.horizontal_offset_widget)
-
-        # Vertical offset input
-        self.vertical_offset_action = QWidgetAction(self.position_menu)
-        self.vertical_offset_widget = QWidget(self.position_menu)
-        self.vertical_offset_layout = QHBoxLayout(self.vertical_offset_widget)
-        self.vertical_offset_layout.setContentsMargins(8, 4, 8, 4)
-        self.vertical_offset_layout.setSpacing(6)
-        self.vertical_offset_input = QLineEdit(self.vertical_offset_widget)
-        self.vertical_offset_input.setPlaceholderText("纵向偏移")
-        self.vertical_offset_input.setFixedWidth(70)
-        self.vertical_offset_button = QPushButton("设置", self.vertical_offset_widget)
-        self.vertical_offset_button.setFixedWidth(48)
-        self.vertical_offset_button.clicked.connect(self._submit_vertical_offset)
-        self.vertical_offset_input.returnPressed.connect(self._submit_vertical_offset)
-        self.vertical_offset_layout.addWidget(self.vertical_offset_input)
-        self.vertical_offset_layout.addWidget(self.vertical_offset_button)
-        self.vertical_offset_action.setDefaultWidget(self.vertical_offset_widget)
         self.autostart_action = QAction("开机自启")
         self.autostart_action.setCheckable(True)
         self.autostart_action.setChecked(bool(self._get_autostart()))
@@ -149,6 +119,26 @@ class SystemTray:
         self.tray.setContextMenu(self.menu)
         self.set_visibility_mode(self._get_visibility_mode())
 
+    def _make_offset_row(
+        self, placeholder: str, on_submit
+    ) -> tuple[QWidgetAction, QLineEdit]:
+        action = QWidgetAction(self.position_menu)
+        widget = QWidget(self.position_menu)
+        layout = QHBoxLayout(widget)
+        layout.setContentsMargins(8, 4, 8, 4)
+        layout.setSpacing(6)
+        edit = QLineEdit(widget)
+        edit.setPlaceholderText(placeholder)
+        edit.setFixedWidth(70)
+        button = QPushButton("设置", widget)
+        button.setFixedWidth(48)
+        button.clicked.connect(on_submit)
+        edit.returnPressed.connect(on_submit)
+        layout.addWidget(edit)
+        layout.addWidget(button)
+        action.setDefaultWidget(widget)
+        return action, edit
+
     def _create_icon(self) -> QIcon:
         pixmap = QPixmap(16, 16)
         pixmap.fill(Qt.GlobalColor.transparent)
@@ -169,31 +159,29 @@ class SystemTray:
     def show_message(self, title: str, message: str) -> None:
         self.tray.showMessage(title, message)
 
-    def update_symbols(self, symbols: list[str]) -> None:
+    def update_symbols(self, entries: list[tuple[str, str]]) -> None:
+        """Rebuild the remove menu. Each entry is (symbol, display_name)."""
         self.remove_symbol_menu.clear()
-        if not symbols:
+        if not entries:
             action = QAction("无可删除股票")
             action.setEnabled(False)
             self.remove_symbol_menu.addAction(action)
             return
 
-        for symbol in symbols:
+        for symbol, name in entries:
             row_widget = QWidget(self.remove_symbol_menu)
             row_layout = QHBoxLayout(row_widget)
             row_layout.setContentsMargins(8, 4, 8, 4)
             row_layout.setSpacing(6)
 
-            symbol_input = QLineEdit(row_widget)
-            symbol_input.setText(symbol)
-            symbol_input.setReadOnly(True)
-            symbol_input.setEnabled(False)
-            symbol_input.setFixedWidth(88)
+            name_label = QLabel(name or symbol, row_widget)
+            name_label.setMinimumWidth(72)
 
             delete_button = QPushButton("删除", row_widget)
             delete_button.setFixedWidth(48)
             delete_button.clicked.connect(partial(self._on_remove_symbol, symbol))
 
-            row_layout.addWidget(symbol_input)
+            row_layout.addWidget(name_label, 1)
             row_layout.addWidget(delete_button)
 
             action = QWidgetAction(self.remove_symbol_menu)
@@ -201,7 +189,7 @@ class SystemTray:
             self.remove_symbol_menu.addAction(action)
 
     def _rebuild_remove_symbol_menu(self) -> None:
-        self.update_symbols(self._get_symbols())
+        self.update_symbols(self._get_symbol_entries())
 
     def _refresh_position_menu(self) -> None:
         horizontal_offset, vertical_offset = self._get_offsets()
