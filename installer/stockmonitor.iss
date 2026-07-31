@@ -25,7 +25,7 @@ AllowNoIcons=yes
 ; 安装包输出路径和名称
 OutputDir=..\dist
 OutputBaseFilename=StockMonitor-Setup
-SetupIconFile=
+SetupIconFile=..\assets\icon.ico
 Compression=lzma2/ultra64
 SolidCompression=yes
 WizardStyle=modern

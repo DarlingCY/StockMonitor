@@ -15,6 +15,8 @@ from PySide6.QtWidgets import (
     QWidgetAction,
 )
 
+from stockmonitor.resources import icon_path
+
 
 class SystemTray:
     def __init__(
@@ -140,6 +142,12 @@ class SystemTray:
         return action, edit
 
     def _create_icon(self) -> QIcon:
+        path = icon_path()
+        if path is not None:
+            icon = QIcon(str(path))
+            if not icon.isNull():
+                return icon
+        # Fallback if assets are missing (e.g. incomplete install).
         pixmap = QPixmap(16, 16)
         pixmap.fill(Qt.GlobalColor.transparent)
         painter = QPainter(pixmap)

@@ -23,6 +23,7 @@ hiddenimports = [
 datas = [
     (str(pyside_dir / "plugins" / "platforms"), "PySide6/plugins/platforms"),
     (str(cn_stock_holidays_dir / "data.txt"), "cn_stock_holidays"),
+    (str(project_root / "assets" / "icon.ico"), "assets"),
 ]
 
 a = Analysis(
@@ -170,7 +171,7 @@ exe = EXE(
     target_arch=None,
     codesign_identity=None,
     entitlements_file=None,
-    icon=None,
+    icon=str(project_root / "assets" / "icon.ico"),
 )
 
 coll = COLLECT(

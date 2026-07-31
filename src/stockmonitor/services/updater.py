@@ -15,15 +15,17 @@ from stockmonitor import __version__
 
 GITHUB_OWNER = "DarlingCY"
 GITHUB_REPO = "StockMonitor"
-LATEST_RELEASE_URL = (
-    f"https://api.github.com/repos/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
+# Use the public releases page (redirects to /tag/vX.Y.Z), not the REST API —
+# unauthenticated api.github.com is capped at ~60 req/hour/IP and breaks update checks.
+LATEST_RELEASE_PAGE = (
+    f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/latest"
 )
 ASSET_NAME = "StockMonitor-Setup.exe"
+_TAG_IN_URL = re.compile(r"/releases/tag/([^/?#]+)")
 
 _HEADERS = {
-    "Accept": "application/vnd.github+json",
-    "X-GitHub-Api-Version": "2022-11-28",
     "User-Agent": f"{GITHUB_REPO}/{__version__}",
+    "Accept": "text/html,application/xhtml+xml",
 }
 
 
@@ -63,14 +65,14 @@ def current_version() -> str:
 
 
 def fetch_latest_release(timeout: float = 10.0) -> ReleaseInfo | None:
-    """Query the GitHub latest release. Returns None on any failure."""
+    """Resolve the latest GitHub release via the public /releases/latest redirect."""
     try:
         with httpx.Client(
             timeout=timeout, headers=_HEADERS, follow_redirects=True
         ) as client:
-            response = client.get(LATEST_RELEASE_URL)
+            response = client.get(LATEST_RELEASE_PAGE)
             response.raise_for_status()
-            data = response.json()
+            final_url = str(response.url)
     except httpx.HTTPError as exc:
         logger.warning("Failed to fetch latest release: {}", exc)
         return None
@@ -78,23 +80,29 @@ def fetch_latest_release(timeout: float = 10.0) -> ReleaseInfo | None:
         logger.warning("Unexpected error fetching latest release: {}", exc)
         return None
 
-    tag_name = str(data.get("tag_name") or "").strip()
-    if not tag_name:
-        logger.warning("Latest release has no tag_name")
+    match = _TAG_IN_URL.search(final_url)
+    if not match:
+        logger.warning("Could not parse release tag from {}", final_url)
         return None
 
-    download_url = ""
-    for asset in data.get("assets") or []:
-        if str(asset.get("name", "")).strip() == ASSET_NAME:
-            download_url = str(asset.get("browser_download_url") or "")
-            break
+    tag_name = match.group(1).strip()
+    if not tag_name:
+        logger.warning("Latest release has empty tag_name")
+        return None
 
+    html_url = (
+        f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/tag/{tag_name}"
+    )
+    download_url = (
+        f"https://github.com/{GITHUB_OWNER}/{GITHUB_REPO}/releases/download/"
+        f"{tag_name}/{ASSET_NAME}"
+    )
     return ReleaseInfo(
         version=tag_name.lstrip("vV"),
         tag_name=tag_name,
         download_url=download_url,
-        html_url=str(data.get("html_url") or ""),
-        notes=str(data.get("body") or ""),
+        html_url=html_url,
+        notes="",
     )
 
 

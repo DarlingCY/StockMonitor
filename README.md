@@ -22,6 +22,9 @@
 ## 项目结构（src 布局）
 
 ```text
+assets/
+  icon.ico          # 应用/安装包/托盘图标
+  icon.png          # 图标源图
 src/stockmonitor/
   main.py
   app.py
@@ -149,7 +152,7 @@ GitHub Actions 将自动构建并创建 Release。
 ### 自动更新
 
 - 程序启动约 8 秒后自动检查一次，之后每 24 小时检查一次，亦可通过托盘菜单的“检查更新”手动触发。
-- 检查来源：GitHub 仓库的 latest release（`https://api.github.com/repos/DarlingCY/StockMonitor/releases/latest`）。
+- 检查来源：GitHub 仓库的 latest release 页面跳转（`https://github.com/DarlingCY/StockMonitor/releases/latest`），不走 REST API，避免未认证限流。
 - 发现新版本时：自动检查会先弹出托盘通知，并打开确认对话框；可选择“下载并安装”（下载 `StockMonitor-Setup.exe` 后退出程序并启动安装程序）、“前往发布页”或“稍后”。
 - 版本比较基于 `__version__`，发布时由 CI 从 tag 写入；本地源码运行时版本固定为源码中的 `__version__`。
 
